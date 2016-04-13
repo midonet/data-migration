@@ -14,12 +14,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from __future__ import print_function
 import argparse
 from data_migration import config
 from data_migration import constants as const
 from data_migration import neutron_data as nd
 import logging
-
+import sys
 
 LOG = logging.getLogger(name="data_migration")
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +32,9 @@ def main():
         description='MidoNet Data Migration Tool',
         formatter_class=argparse.RawTextHelpFormatter)
 
+    parser.add_argument('command', action='store',
+                        help="Command to run:\n\n"
+                             '\tneutron: export Neutron data\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -52,8 +56,13 @@ def main():
     LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
 
     # Start the migration
-    nm = nd.NeutronDataMigrator()
-    nm.migrate(dry_run=args.dryrun)
+    if args.command == "neutron":
+        nm = nd.NeutronDataMigrator()
+        nm.migrate(dry_run=args.dryrun)
+    else:
+        print("Invalid command: " + args.command, file=sys.stderr)
+        parser.print_help()
+        sys.exit(-1)
 
 
 if __name__ == "__main__":

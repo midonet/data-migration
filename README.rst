@@ -13,7 +13,7 @@ How to Run
 Run the following command to insert Neutron objects to ``midonet_tasks`` table
 (of Neutron DB) where they will be imported to midonet cluster::
 
-     $ ./migrate.py
+     $ ./migrate.py neutron
 
 The script requires ``neutron.conf`` and ``midonet.ini`` files to run.  By
 default, it assumes ``/etc/neutron/neutron.conf`` and
@@ -21,18 +21,18 @@ default, it assumes ``/etc/neutron/neutron.conf`` and
 
 To override, run it with the following optional arguments::
 
-     $ ./migrate.py -n ./my_neutron.conf -p ./my_plugin.conf
+     $ ./migrate.py -n ./my_neutron.conf -p ./my_plugin.conf neutron
 
 Run the following command to do a dry-run of the data migration::
 
-     $ ./migrate.py --dryrun
+     $ ./migrate.py --dryrun neutron
 
 This command outputs the list of tasks that would be performed in order for
 data migration.  Currently only dry-run is supported.
 
 To turn on debugging::
 
-     $ ./migrate.py --debug
+     $ ./migrate.py --debug neutron
 
 For more information about the command::
 
