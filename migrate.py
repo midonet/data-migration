@@ -20,6 +20,7 @@ from data_migration import config
 from data_migration import constants as const
 from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
+import json
 import logging
 import sys
 
@@ -36,7 +37,9 @@ def main():
     parser.add_argument('command', action='store',
                         help="Command to run:\n\n"
                              '\tneutron: export Neutron data\n'
-                             '\tprepare: prepare MidoNet data')
+                             '\tprepare: prepare MidoNet data\n'
+                             '\timport:  import MidoNet data from JSON\n'
+                             '\t         output generated from prepare\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -53,6 +56,7 @@ def main():
 
     # Initialize configs
     config.register([args.neutron_conf, args.plugin_conf])
+    dry_run = args.dryrun
 
     # For now, just allow DEBUG or INFO
     LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
@@ -60,10 +64,14 @@ def main():
     # Start the migration
     if args.command == "neutron":
         nm = nd.NeutronDataMigrator()
-        nm.migrate(dry_run=args.dryrun)
+        nm.migrate(dry_run=dry_run)
     elif args.command == "prepare":
         mm = md.MidonetDataMigrator()
-        mm.prepare()
+        print(json.dumps(mm.prepare()))
+    elif args.command == "import":
+        source = sys.stdin.readline()
+        mm = md.MidonetDataMigrator()
+        mm.migrate(json.loads(source), dry_run=dry_run)
     else:
         print("Invalid command: " + args.command, file=sys.stderr)
         parser.print_help()

@@ -46,3 +46,7 @@ Commands::
      prepare
          Prepare MidoNet data by printing the gathered data in a JSON format.
 
+     import
+         Read from stdin the JSON output generated from ``prepare`` command,
+         and import the data into MidoNet cluster.
+

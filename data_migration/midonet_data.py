@@ -16,8 +16,8 @@
 from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
-import json
 import logging
+from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -98,10 +98,50 @@ class MidonetDataMigrator(object):
         return tz_list
 
     def prepare(self):
-        data = {
+        return {
             "hosts": self._prepare_host_map(),
             "tunnel_zones": self._prepare_tz_list()
         }
 
-        # For now just print it out
-        print(json.dumps(data))
+    def migrate(self, mn_map, dry_run=False):
+        for tz in mn_map['tunnel_zones'] if 'tunnel_zones' in mn_map else []:
+            tz_obj = tz['tz']
+            new_tz = None
+            if dry_run:
+                print("mn_api.add_tunnel_zone()type(" + tz_obj['type'] + ")"
+                      ".name(" + tz_obj['name'] + ").create()")
+            else:
+                try:
+                    new_tz = (self.mc.mn_api.add_tunnel_zone()
+                              .type(tz_obj['type'])
+                              .name(tz_obj['name'])
+                              .create())
+                except wexc.HTTPClientError as e:
+                    if e.code == 409:
+                        LOG.warn('Tunnel zone already exists: ' +
+                                 tz_obj['name'])
+                        tz_list = self.mc.mn_api.get_tunnel_zones()
+                        new_tz = next(tz for tz in tz_list
+                                      if tz.get_name() == tz_obj['name'])
+                    else:
+                        raise e
+
+            for host_id, host in iter(tz['hosts'].items()):
+                if dry_run:
+                    print("new_tz.add_tunnel_zone_host().ip_address(" +
+                          host['ipAddress'] + ").host_id(" + host['hostId'] +
+                          ").create()")
+                else:
+                    (new_tz.add_tunnel_zone_host().ip_address(
+                        host['ipAddress']).host_id(host['hostId']).create())
+
+        for host_id, host in (iter(mn_map['hosts'].items())
+                              if 'hosts' in mn_map else []):
+            host_obj = self.mc.mn_api.get_host(host_id)
+            for iface, port in iter(host['ports'].items()):
+                if dry_run:
+                    print("mn_api.add_host_interface_port(host_obj, port_id=" +
+                          port + ",interface_name=" + iface + ")")
+                else:
+                    self.mc.mn_api.add_host_interface_port(
+                        host_obj, port_id=port, interface_name=iface)
