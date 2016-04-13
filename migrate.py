@@ -27,20 +27,22 @@ logging.basicConfig(level=logging.INFO)
 
 def main():
     # Parse args
-    parser = argparse.ArgumentParser(description='Prepare for data migration')
+    parser = argparse.ArgumentParser(
+        description='MidoNet Data Migration Tool',
+        formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
-                        help='Perform a "dry run" and print out the examined '
-                             'information and actions that would normally be '
-                             'taken, before exiting.')
+                        help='Perform a "dry run" and print out the examined\n'
+                             'information and actions that would normally be\n'
+                             'taken')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
-                        help='Turn on debug logging (off by default).')
+                        help='Turn on debug logging (off by default)')
     parser.add_argument('-c', '--neutron_conf', action='store',
                         default=const.NEUTRON_CONF_FILE,
-                        help='Neutron configuration file.')
+                        help='Neutron configuration file')
     parser.add_argument('-p', '--plugin_conf', action='store',
                         default=const.MIDONET_PLUGIN_CONF_FILE,
-                        help='Midonet plugin configuration file.')
+                        help='MidoNet plugin configuration file')
     args = parser.parse_args()
 
     # Initialize configs
