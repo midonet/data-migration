@@ -13,17 +13,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from data_migration import constants as const
 from data_migration import exceptions as exc
 from neutron.common import config
 from oslo_config import cfg
 
-try:
-    cfg.CONF(args=[], project='neutron',
-             default_config_files=[const.NEUTRON_CONF_FILE,
-                                   const.MIDONET_PLUGIN_CONF_FILE])
-except cfg.ConfigFilesPermissionDeniedError as e:
-    raise exc.UpgradeScriptException('Error opening file; this tool must be '
-                                     'run with root permissions: ' + str(e))
 
-cfg.CONF.register_opts(config.core_opts)
+def register(configs):
+    try:
+        cfg.CONF(args=[], project='neutron', default_config_files=configs)
+    except cfg.ConfigFilesPermissionDeniedError as e:
+        raise exc.UpgradeScriptException('Error opening file; this tool must '
+                                         'be run with root permissions: ' +
+                                         str(e))
+    cfg.CONF.register_opts(config.core_opts)

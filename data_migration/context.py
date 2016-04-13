@@ -21,6 +21,9 @@ from neutron_lbaas.db.loadbalancer import loadbalancer_db
 from oslo_config import cfg
 
 
+_migration_context = None
+
+
 class MigrationContext(object):
 
     def __init__(self):
@@ -33,4 +36,8 @@ class MigrationContext(object):
         self.lb_client = loadbalancer_db.LoadBalancerPluginDb()
 
 
-migration_context = MigrationContext()
+def get_context():
+    global _migration_context
+    if _migration_context is None:
+        _migration_context = MigrationContext()
+    return _migration_context

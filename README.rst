@@ -15,6 +15,14 @@ Run the following command to insert Neutron objects to ``midonet_tasks`` table
 
      $ ./migrate.py
 
+The script requires ``neutron.conf`` and ``midonet.ini`` files to run.  By
+default, it assumes ``/etc/neutron/neutron.conf`` and
+``/etc/neutron/plugins/midonet.ini``.
+
+To override, run it with the following optional arguments::
+
+     $ ./migrate.py -n ./my_neutron.conf -p ./my_plugin.conf
+
 Run the following command to do a dry-run of the data migration::
 
      $ ./migrate.py --dryrun

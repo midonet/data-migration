@@ -15,6 +15,8 @@
 #    under the License.
 
 import argparse
+from data_migration import config
+from data_migration import constants as const
 from data_migration import neutron_data as nd
 import logging
 
@@ -33,13 +35,23 @@ def main():
                              'taken, before exiting.')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
                         help='Turn on debug logging (off by default).')
+    parser.add_argument('-c', '--neutron_conf', action='store',
+                        default=const.NEUTRON_CONF_FILE,
+                        help='Neutron configuration file.')
+    parser.add_argument('-p', '--plugin_conf', action='store',
+                        default=const.MIDONET_PLUGIN_CONF_FILE,
+                        help='Midonet plugin configuration file.')
     args = parser.parse_args()
+
+    # Initialize configs
+    config.register([args.neutron_conf, args.plugin_conf])
 
     # For now, just allow DEBUG or INFO
     LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
 
     # Start the migration
-    nd.migrate(dry_run=args.dryrun)
+    nm = nd.NeutronDataMigrator()
+    nm.migrate(dry_run=args.dryrun)
 
 
 if __name__ == "__main__":
