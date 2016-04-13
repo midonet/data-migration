@@ -18,6 +18,7 @@ from __future__ import print_function
 import argparse
 from data_migration import config
 from data_migration import constants as const
+from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
 import logging
 import sys
@@ -34,7 +35,8 @@ def main():
 
     parser.add_argument('command', action='store',
                         help="Command to run:\n\n"
-                             '\tneutron: export Neutron data\n')
+                             '\tneutron: export Neutron data\n'
+                             '\tprepare: prepare MidoNet data')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -59,6 +61,9 @@ def main():
     if args.command == "neutron":
         nm = nd.NeutronDataMigrator()
         nm.migrate(dry_run=args.dryrun)
+    elif args.command == "prepare":
+        mm = md.MidonetDataMigrator()
+        mm.prepare()
     else:
         print("Invalid command: " + args.command, file=sys.stderr)
         parser.print_help()
