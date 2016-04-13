@@ -10,34 +10,39 @@ Currently data migration assumes that the Neutron version is kilo.
 How to Run
 ----------
 
-Run the following command to insert Neutron objects to ``midonet_tasks`` table
-(of Neutron DB) where they will be imported to midonet cluster::
+``migrate.py`` command is defined as follows::
 
-     $ ./migrate.py neutron
+     $ ./migrate_py [-h|--help] [-d|--debug] [-n|--dryrun]
+                    [-c|--neutron_conf <neutron_conf_file>]
+                    [-p|--plugin_conf <plugin_conf_file>]
+                    <command>
+Options::
 
-Run the following command to prepare MidoNet data for migration::
+     -h,--help
+         Show usage of the command
 
-     $ ./migrate.py prepare
+     -d,--debug
+         Turn on debug level logging.  Default is off.
 
-The script requires ``neutron.conf`` and ``midonet.ini`` files to run.  By
-default, it assumes ``/etc/neutron/neutron.conf`` and
-``/etc/neutron/plugins/midonet.ini``.
+     -n,--dryrun
+         Run the command but only print out actions that would be taken
+         normally, without actually committing the data.
 
-To override, run it with the following optional arguments::
+     -c,--neutron_conf <conf_file>
+         Use the specified Neutron configuration file instead of the default,
+         ``/etc/neutron/neutron.conf``.
 
-     $ ./migrate.py -n ./my_neutron.conf -p ./my_plugin.conf neutron
+     -p,--plugin_conf <conf_file>
+         Use the specified MidoNet plugin configuration file instead of the
+         default, ``/etc/neutron/plugins/midonet/midonet.ini``.
 
-Run the following command to do a dry-run of the data migration::
+Commands::
 
-     $ ./migrate.py --dryrun neutron
+     neutron
+         Export the Neutron data by inserting Neutron objects to
+         ``midonet_tasks`` table of Neutron DB where they will be imported to
+         midonet cluster.  With --dryrun, nothing gets inserted.
 
-This command outputs the list of tasks that would be performed in order for
-data migration.  Currently only dry-run is supported.
+     prepare
+         Prepare MidoNet data by printing the gathered data in a JSON format.
 
-To turn on debugging::
-
-     $ ./migrate.py --debug neutron
-
-For more information about the command::
-
-     $ ./migrate.py --help
