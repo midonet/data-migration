@@ -88,7 +88,7 @@ def _task_router(_topo, task_model, rid, router_obj):
 
     # Create a router with no routes and update them later
     routeless_router = {k: v
-                        for k, v in router_obj.iteritems()
+                        for k, v in iter(router_obj.items())
                         if k != 'routes'}
 
     return {'type': task.CREATE,
@@ -208,7 +208,7 @@ class NeutronDataMigrator(object):
         """Creates a list of tasks to run given a map of object ID -> object"""
         task_list = []
         for key, model, func in _CREATES:
-            for oid, obj in obj_map[key].iteritems():
+            for oid, obj in iter(obj_map[key].items()):
                 elem = func(obj_map, model, oid, obj)
                 if elem:
                     task_list.append(elem)
