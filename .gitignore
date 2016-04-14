@@ -70,3 +70,6 @@ src/
 # Package generated directories
 RPMS/
 DEBS/
+
+# IDEA stuff
+.idea
