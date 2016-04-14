@@ -36,7 +36,8 @@ def main():
 
     parser.add_argument('command', action='store',
                         help="Command to run:\n\n"
-                             '\tneutron: export Neutron data\n'
+                             '\tneutron_prepare: prepare Neutron data\n'
+                             '\tneutron_export: export Neutron data\n'
                              '\tprepare: prepare MidoNet data\n'
                              '\timport:  import MidoNet data from JSON\n'
                              '\t         output generated from prepare\n')
@@ -62,9 +63,13 @@ def main():
     LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
 
     # Start the migration
-    if args.command == "neutron":
+    if args.command == "neutron_prepare":
         nm = nd.NeutronDataMigrator()
-        nm.migrate(dry_run=dry_run)
+        print(json.dumps(nm.prepare()))
+    elif args.command == "neutron_export":
+        source = sys.stdin.readline()
+        nm = nd.NeutronDataMigrator()
+        nm.migrate(json.loads(source), dry_run=dry_run)
     elif args.command == "prepare":
         mm = md.MidonetDataMigrator()
         print(json.dumps(mm.prepare()))
