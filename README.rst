@@ -30,23 +30,23 @@ Options::
 
      -c,--neutron_conf <conf_file>
          Use the specified Neutron configuration file instead of the default,
-         ``/etc/neutron/neutron.conf``.
+         '/etc/neutron/neutron.conf'.
 
      -p,--plugin_conf <conf_file>
          Use the specified MidoNet plugin configuration file instead of the
-         default, ``/etc/neutron/plugins/midonet/midonet.ini``.
+         default, '/etc/neutron/plugins/midonet/midonet.ini'.
 
 Commands::
 
      neutron
          Export the Neutron data by inserting Neutron objects to
-         ``midonet_tasks`` table of Neutron DB where they will be imported to
+         `midonet_tasks' table of Neutron DB where they will be imported to
          midonet cluster.  With --dryrun, nothing gets inserted.
 
      prepare
          Prepare MidoNet data by printing the gathered data in a JSON format.
 
      import
-         Read from stdin the JSON output generated from ``prepare`` command,
-         and import the data into MidoNet cluster.
+         Read from stdin the JSON output generated from 'prepare' command, and
+         import the data into MidoNet cluster.
 
