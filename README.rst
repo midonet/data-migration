@@ -38,11 +38,14 @@ Options::
 
 Commands::
 
-     neutron
+     neutron_prepare
+         Output in JSON the existing Neutron resource ID -> resource object
+         mappings.
+     neutron_export
          Export the Neutron data by inserting Neutron objects to
          `midonet_tasks' table of Neutron DB where they will be imported to
-         midonet cluster.  With --dryrun, nothing gets inserted.
-
+         midonet cluster.  With --dryrun, nothing gets inserted.  The input of
+         this command is the JSON output from 'neutron_prepare' command.
      prepare
          Prepare MidoNet data by printing the gathered data in a JSON format.
 

@@ -131,6 +131,17 @@ def _dry_run_output(task):
                                  task['resource_id']])
 
 
+def _create_task_list(obj_map):
+    """Creates a list of tasks to run given a map of object ID -> object"""
+    task_list = []
+    for key, model, func in _CREATES:
+        for oid, obj in iter(obj_map[key].items()):
+            elem = func(obj_map, model, oid, obj)
+            if elem:
+                task_list.append(elem)
+    return task_list
+
+
 _CREATES = [
     ('security-groups', task.SECURITY_GROUP, _task_create_by_id),
     ('networks', task.NETWORK, _task_create_by_id),
@@ -195,31 +206,21 @@ class NeutronDataMigrator(object):
                  [utils.MinLengthFilter(field='pools', min_len=1)]),
         ]
 
-    def _create_obj_map(self):
-        """Creates a map of object ID -> object from Neutron DB"""
+    def migrate(self, obj_map, dry_run=False):
+        LOG.info('Running migration process')
+        tasks = _create_task_list(obj_map)
+        for t in tasks:
+            if dry_run:
+                print(_dry_run_output(t))
+            else:
+                task.create_task(self.mc.ctx, **t)
+
+    def prepare(self):
+        """Prepares a map of object ID -> object from Neutron DB"""
+        LOG.info('Preparing Neutron data')
         obj_map = {}
         for key, func, filter_list in self._get_queries:
             obj_map.update(_get_neutron_objects(key=key, func=func,
                                                 context=self.mc.ctx,
                                                 filter_list=filter_list))
         return obj_map
-
-    def _create_task_list(self, obj_map):
-        """Creates a list of tasks to run given a map of object ID -> object"""
-        task_list = []
-        for key, model, func in _CREATES:
-            for oid, obj in iter(obj_map[key].items()):
-                elem = func(obj_map, model, oid, obj)
-                if elem:
-                    task_list.append(elem)
-        return task_list
-
-    def migrate(self, dry_run=False):
-        LOG.info('Running migration process')
-        obj_map = self._create_obj_map()
-        tasks = self._create_task_list(obj_map)
-        for t in tasks:
-            if dry_run:
-                print(_dry_run_output(t))
-            else:
-                task.create_task(self.mc.ctx, **t)
