@@ -117,7 +117,7 @@ class MidonetDataMigrator(object):
                               .name(tz_obj['name'])
                               .create())
                 except wexc.HTTPClientError as e:
-                    if e.code == 409:
+                    if e.code == wexc.HTTPConflict.code:
                         LOG.warn('Tunnel zone already exists: ' +
                                  tz_obj['name'])
                         tz_list = self.mc.mn_api.get_tunnel_zones()
