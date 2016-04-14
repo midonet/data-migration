@@ -48,8 +48,6 @@ Commands::
          this command is the JSON output from 'neutron_prepare' command.
      prepare
          Prepare MidoNet data by printing the gathered data in a JSON format.
-
-     import
+     bind
          Read from stdin the JSON output generated from 'prepare' command, and
-         import the data into MidoNet cluster.
-
+         bind the hosts to tunnel zones and ports.

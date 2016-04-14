@@ -39,8 +39,7 @@ def main():
                              '\tneutron_prepare: prepare Neutron data\n'
                              '\tneutron_export: export Neutron data\n'
                              '\tprepare: prepare MidoNet data\n'
-                             '\timport:  import MidoNet data from JSON\n'
-                             '\t         output generated from prepare\n')
+                             '\tbind:  bind hosts to tunnel zones and ports\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -73,10 +72,11 @@ def main():
     elif args.command == "prepare":
         mm = md.MidonetDataMigrator()
         print(json.dumps(mm.prepare()))
-    elif args.command == "import":
+    elif args.command == "bind":
         source = sys.stdin.readline()
         mm = md.MidonetDataMigrator()
-        mm.migrate(json.loads(source), dry_run=dry_run)
+        m_data = json.loads(source)
+        mm.bind_hosts(m_data["host_bindings"], dry_run=dry_run)
     else:
         print("Invalid command: " + args.command, file=sys.stderr)
         parser.print_help()

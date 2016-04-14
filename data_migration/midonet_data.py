@@ -17,7 +17,6 @@ from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
 import logging
-from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -50,98 +49,100 @@ class MidonetDataMigrator(object):
         LOG.debug("[(MIDONET) Provider Router]: " + str(provider_router))
         return provider_router
 
-    def _prepare_host_map(self):
-        LOG.debug("[(MIDONET) hosts]")
-        host_map = {}
+    def _convert_to_host2tz_map(self, tzs):
+        host2tz = {}
+        for tz in tzs:
+            tz_id = tz['id']
+            tzhs = self._get_objects_by_path('tunnel_zones/' + tz_id +
+                                             "/hosts")
+            for tzh in tzhs:
+                hid = tzh['hostId']
+                if hid not in host2tz:
+                    host2tz[hid] = []
+                host2tz[hid].append(
+                    {"id": tzh["tunnelZoneId"],
+                     "ip_address": tzh["ipAddress"]})
+        return host2tz
+
+    def _get_host_ports(self, host_id, pr_id):
+        port_list = []
+        ports = self._get_objects_by_path('hosts/' + host_id + "/ports")
+
+        # Skip ports for health monitors
+        for port in [p for p in ports
+                     if not _is_lb_hm_interface(p['interfaceName'])]:
+            port_obj = self._get_objects_by_url(port['port'])
+
+            # Skip port bindings for external routers (provider router)
+            if port_obj['deviceId'] != pr_id:
+                port_list.append({"id": port_obj["id"],
+                                  "interface": port['interfaceName']})
+        return port_list
+
+    def _prepare_host_bindings(self, hosts, host2tz_map):
+        """Prepare the host bindings data
+
+        The last step in the migration process is updating port bindings
+        and host-tz memberships.  By the time this data is used, tunnel zones
+        and ports should be already created.
+        """
+        bindings_map = {}
         pr = self._get_provider_router()
+        for h in hosts:
+            hid = h['id']
+            bindings_map[hid] = {
+                "name": h['name'],
+                "tunnel_zones": host2tz_map[hid],
+                "ports": self._get_host_ports(hid, pr['id'])
+            }
 
-        hosts = self._get_objects_by_path('hosts')
-        for host in hosts if hosts else []:
-            LOG.debug("\t[(MIDONET) host " + host['id'] + "]: " + str(host))
-            host_map[host['id']] = {}
-            h = host_map[host['id']]
-            h['host'] = host
-            h['ports'] = {}
-            port_map = h['ports']
-
-            # Skip ports for health monitors
-            ports = self._get_objects_by_path('hosts/' + host['id'] + "/ports")
-            for port in [p for p in ports
-                         if not _is_lb_hm_interface(p['interfaceName'])]:
-                port_obj = self._get_objects_by_url(port['port'])
-
-                # Skip port bindings for external routers (provider router
-                # device)
-                if port_obj['deviceId'] != pr['id']:
-                    LOG.debug("\t\t[(MIDONET) port binding " +
-                              port['interfaceName'] + "=" + port[
-                                  'portId'] + "]")
-                    port_map[port['interfaceName']] = port['portId']
-        return host_map
-
-    def _prepare_tz_list(self):
-        LOG.debug("[(MIDONET) tunnel zones]")
-        tz_list = []
-        tzs = self._get_objects_by_path('tunnel_zones')
-        for tz in tzs if tzs else []:
-            LOG.debug("\t[(MIDONET) tz " + tz['id'] + "]: " + str(tz))
-            hosts = self._get_objects_by_path('tunnel_zones/' + tz['id'] +
-                                              "/hosts")
-
-            tz_map = {'tz': tz, 'hosts': {}}
-            host_map = tz_map['hosts']
-            for host in hosts:
-                LOG.debug("\t\t[(MIDONET) tz host]: " + str(host))
-                host_map[host['hostId']] = host
-
-            tz_list.append(tz_map)
-        return tz_list
+        return bindings_map
 
     def prepare(self):
+        tzs = self._get_objects_by_path('tunnel_zones') or []
+        hosts = self._get_objects_by_path('hosts') or []
+        host2tz_map = self._convert_to_host2tz_map(tzs)
         return {
-            "hosts": self._prepare_host_map(),
-            "tunnel_zones": self._prepare_tz_list()
+            "tunnel_zones": tzs,
+            "host_bindings": self._prepare_host_bindings(hosts, host2tz_map)
         }
 
-    def migrate(self, mn_map, dry_run=False):
-        for tz in mn_map['tunnel_zones'] if 'tunnel_zones' in mn_map else []:
-            tz_obj = tz['tz']
-            new_tz = None
-            if dry_run:
-                print("mn_api.add_tunnel_zone()type(" + tz_obj['type'] + ")"
-                      ".name(" + tz_obj['name'] + ").create()")
-            else:
-                try:
-                    new_tz = (self.mc.mn_api.add_tunnel_zone()
-                              .type(tz_obj['type'])
-                              .name(tz_obj['name'])
-                              .create())
-                except wexc.HTTPClientError as e:
-                    if e.code == wexc.HTTPConflict.code:
-                        LOG.warn('Tunnel zone already exists: ' +
-                                 tz_obj['name'])
-                        tz_list = self.mc.mn_api.get_tunnel_zones()
-                        new_tz = next(tz for tz in tz_list
-                                      if tz.get_name() == tz_obj['name'])
-                    else:
-                        raise e
+    def bind_hosts(self, bindings, dry_run=False):
+        """Execute the migration
 
-            for host_id, host in iter(tz['hosts'].items()):
+        Input format (see '_prepare_host_bindings'):
+
+            {"host_id": {"name": <hostname>,
+                         "ports": [{"id": <port_id>,
+                                   "interface": <interface>}, ...],
+                         "tunnel_zones": [{"id": <tunnel_zone_id>,
+                                           "ip_address": <ip_address>}, ...]
+                         },
+            }
+
+        This is expected to be executed AFTER the hosts are upgraded.
+        Otherwise, MidoNet will reject hosts that are unknown.
+        """
+        for hid, h in iter(bindings.items()):
+            tzs = h["tunnel_zones"]
+            for tz in tzs:
                 if dry_run:
-                    print("new_tz.add_tunnel_zone_host().ip_address(" +
-                          host['ipAddress'] + ").host_id(" + host['hostId'] +
-                          ").create()")
+                    print("tz.add_tunnel_zone_host()"
+                          ".ip_address(" + tz['ip_address'] + ")"
+                          ".host_id(" + hid + ").create()")
                 else:
-                    (new_tz.add_tunnel_zone_host().ip_address(
-                        host['ipAddress']).host_id(host['hostId']).create())
+                    tz = self.mc.mn_api.get_tunnel_zone(tz['id'])
+                    (tz.add_tunnel_zone_host()
+                     .ip_address(h['ip_address'])
+                     .host_id(hid).create())
 
-        for host_id, host in (iter(mn_map['hosts'].items())
-                              if 'hosts' in mn_map else []):
-            host_obj = self.mc.mn_api.get_host(host_id)
-            for iface, port in iter(host['ports'].items()):
+            host = self.mc.mn_api.get_host(hid)
+            ports = h["ports"]
+            for p in ports:
                 if dry_run:
-                    print("mn_api.add_host_interface_port(host_obj, port_id=" +
-                          port + ",interface_name=" + iface + ")")
+                    print("api.add_host_interface_port(host, "
+                          "port_id=" + p["id"] +
+                          ", interface_name=" + p["interface"] + ")")
                 else:
                     self.mc.mn_api.add_host_interface_port(
-                        host_obj, port_id=port, interface_name=iface)
+                        host, port_id=p["id"], interface_name=p["interface"])
