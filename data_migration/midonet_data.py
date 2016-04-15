@@ -52,7 +52,7 @@ def _convert_to_host_id_to_name_map(hosts):
     return h_map
 
 
-class MidonetDataMigrator(object):
+class DataReader(object):
 
     def __init__(self):
         self.mc = context.get_context()
@@ -174,7 +174,15 @@ class MidonetDataMigrator(object):
             "provider_router": self._prepare_provider_router(host_name_map)
         }
 
-    def bind_hosts(self, bindings, dry_run=False):
+
+class DataWriter(object):
+
+    def __init__(self, data, dry_run=False):
+        self.mc = context.get_context()
+        self.data = data
+        self.dry_run = dry_run
+
+    def bind_hosts(self):
         """Execute the migration
 
         Input format (see '_prepare_host_bindings'):
@@ -190,10 +198,11 @@ class MidonetDataMigrator(object):
         This is expected to be executed AFTER the hosts are upgraded.
         Otherwise, MidoNet will reject hosts that are unknown.
         """
+        bindings = self.data['midonet']['host_bindings']
         for hid, h in iter(bindings.items()):
             tzs = h["tunnel_zones"]
             for tz in tzs:
-                if dry_run:
+                if self.dry_run:
                     print("tz.add_tunnel_zone_host()"
                           ".ip_address(" + tz['ip_address'] + ")"
                           ".host_id(" + hid + ").create()")
@@ -206,7 +215,7 @@ class MidonetDataMigrator(object):
             host = self.mc.mn_api.get_host(hid)
             ports = h["ports"]
             for p in ports:
-                if dry_run:
+                if self.dry_run:
                     print("api.add_host_interface_port(host, "
                           "port_id=" + p["id"] +
                           ", interface_name=" + p["interface"] + ")")
