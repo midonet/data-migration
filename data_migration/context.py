@@ -18,9 +18,9 @@ from midonetclient import api
 from midonetclient.client import httpclient
 from neutron.common import rpc
 from neutron import context as ncntxt
-from neutron.plugins.midonet import plugin
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
 from oslo_config import cfg
+from oslo_utils import importutils
 
 
 _migration_context = None
@@ -34,6 +34,9 @@ class MigrationContext(object):
         rpc.init(cfg.CONF)
 
         neutron_config = cfg.CONF
+
+        # Load the plugin dynamically
+        self.client = importutils.import_object(neutron_config.core_plugin)
         mn_config = neutron_config.MIDONET
         self.mn_url = mn_config.midonet_uri
         self.mn_client = httpclient.HttpClient(mn_config.midonet_uri,
@@ -46,7 +49,6 @@ class MigrationContext(object):
                                      project_id=mn_config.project_id)
 
         self.ctx = ncntxt.get_admin_context()
-        self.client = plugin.MidonetPluginV2()
         self.lb_client = loadbalancer_db.LoadBalancerPluginDb()
 
 
