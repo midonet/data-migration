@@ -26,10 +26,37 @@ def _is_lb_hm_interface(name):
             name.endswith(const.LB_HM_INTF_SUFFIX))
 
 
+def _port_is_bound(p):
+    return p['type'] == const.EXT_RTR_PORT_TYPE and p['hostInterfacePort']
+
+
+def _cidr_from_port(p):
+    return p['networkAddress'] + "/" + str(p['networkLength'])
+
+
+def _make_provider_router_port_dict(p, host, ifName):
+    return {
+        'admin_state_up': p['adminStateUp'],
+        'network_cidr': _cidr_from_port(p),
+        'mac': p['portMac'],
+        'ip_address': p['portAddress'],
+        'host': host,
+        'iface': ifName
+    }
+
+
+def _convert_to_host_id_to_name_map(hosts):
+    h_map = {}
+    for h in hosts:
+        h_map[h['id']] = h['name']
+    return h_map
+
+
 class MidonetDataMigrator(object):
 
     def __init__(self):
         self.mc = context.get_context()
+        self._provider_router = None
 
     def _get_objects_by_path(self, path):
         return self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
@@ -48,6 +75,12 @@ class MidonetDataMigrator(object):
 
         LOG.debug("[(MIDONET) Provider Router]: " + str(provider_router))
         return provider_router
+
+    @property
+    def provider_router(self):
+        if self._provider_router is None:
+            self._provider_router = self._get_provider_router()
+        return self._provider_router
 
     def _convert_to_host2tz_map(self, tzs):
         host2tz = {}
@@ -87,7 +120,7 @@ class MidonetDataMigrator(object):
         and ports should be already created.
         """
         bindings_map = {}
-        pr = self._get_provider_router()
+        pr = self.provider_router
         for h in hosts:
             hid = h['id']
             bindings_map[hid] = {
@@ -98,13 +131,47 @@ class MidonetDataMigrator(object):
 
         return bindings_map
 
+    def _get_port_with_host_intf_dict(self, p, host_id2name_map):
+        hip = self._get_objects_by_url(p['hostInterfacePort'])
+        h_name = host_id2name_map[hip['hostId']]
+        return _make_provider_router_port_dict(p, h_name,
+                                               hip['interfaceName'])
+
+    def _prepare_provider_router(self, host_id2name_map):
+        """Prepares the data required for provider router migration
+
+        Gets 'router' and 'ports' portion of the provider router -> edge
+        router migration.  See neutron_data's create_edge_router for more
+        detail on the data.
+
+        host_id2name_map is required to convert host ID to host name that
+        Neutron expects.
+        """
+        ports = []
+        pr_id = self.provider_router['id']
+        pr_ports = self._get_objects_by_path('routers/' + pr_id + '/ports')
+        for p in pr_ports:
+            if _port_is_bound(p):
+                port = self._get_port_with_host_intf_dict(p, host_id2name_map)
+                ports.append(port)
+
+        return {
+            'router': {
+                'name': self.provider_router['name'],
+                'admin_state_up': self.provider_router['adminStateUp']
+            },
+            'ports': ports
+        }
+
     def prepare(self):
         tzs = self._get_objects_by_path('tunnel_zones') or []
         hosts = self._get_objects_by_path('hosts') or []
         host2tz_map = self._convert_to_host2tz_map(tzs)
+        host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
             "tunnel_zones": tzs,
-            "host_bindings": self._prepare_host_bindings(hosts, host2tz_map)
+            "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
+            "provider_router": self._prepare_provider_router(host_name_map)
         }
 
     def bind_hosts(self, bindings, dry_run=False):
