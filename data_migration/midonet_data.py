@@ -30,6 +30,7 @@ class MidonetDataMigrator(object):
 
     def __init__(self):
         self.mc = context.get_context()
+        self._provider_router = None
 
     def _get_objects_by_path(self, path):
         return self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
@@ -48,6 +49,12 @@ class MidonetDataMigrator(object):
 
         LOG.debug("[(MIDONET) Provider Router]: " + str(provider_router))
         return provider_router
+
+    @property
+    def provider_router(self):
+        if self._provider_router is None:
+            self._provider_router = self._get_provider_router()
+        return self._provider_router
 
     def _convert_to_host2tz_map(self, tzs):
         host2tz = {}
@@ -87,7 +94,7 @@ class MidonetDataMigrator(object):
         and ports should be already created.
         """
         bindings_map = {}
-        pr = self._get_provider_router()
+        pr = self.provider_router
         for h in hosts:
             hid = h['id']
             bindings_map[hid] = {
