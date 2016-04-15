@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+EXT_RTR_PORT_TYPE = "ExteriorRouter"
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
 MIDONET_PLUGIN_CONF_FILE = '/etc/neutron/plugins/midonet/midonet.ini'

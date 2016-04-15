@@ -46,6 +46,9 @@ Commands::
          `midonet_tasks' table of Neutron DB where they will be imported to
          midonet cluster.  With --dryrun, nothing gets inserted.  The input of
          this command is the JSON output from 'prepare' command.
+      provider_router
+         Convert the MidoNet Provider Router to an edge router.  The input to
+         this command is the JSON output from 'prepare' command.
      bind
          Read from stdin the JSON output generated from 'prepare' command, and
          bind the hosts to tunnel zones and ports.

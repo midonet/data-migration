@@ -142,6 +142,22 @@ def _create_task_list(obj_map):
     return task_list
 
 
+def _router_has_gateway(r):
+    return ('external_gateway_info' in r and
+            'external_fixed_ips' in r['external_gateway_info'])
+
+
+def _get_external_subnet_ids(nets):
+    subnet_ids = []
+    networks = [net for net in iter(nets.values())
+                if net['router:external']]
+    for net in networks:
+        for sub in net['subnets']:
+            subnet_ids.append(sub)
+
+    return subnet_ids
+
+
 _CREATES = [
     ('security-groups', task.SECURITY_GROUP, _task_create_by_id),
     ('networks', task.NETWORK, _task_create_by_id),
@@ -214,6 +230,111 @@ class NeutronDataMigrator(object):
                 print(_dry_run_output(t))
             else:
                 task.create_task(self.mc.ctx, **t)
+
+    def create_edge_router(self, provider_router, nets, tenant, dry_run=False):
+        """Create the edge router
+
+        The expected input is:
+        {
+            'router': {
+                           'name': <name>,
+                           'admin_state_up': <admin_state_up>
+                      },
+            'ports': [{
+                           'admin_state_up': <admin_state_up>,
+                           'network_cidr': <network_cidr>,
+                           'mac': <mac>,
+                           'ip_address': <ip_address>,
+                           'host': <host>,
+                           'iface': <iface>,
+
+                      }, ...].
+        }
+
+        nets is a list of Neutron network objects.
+        """
+        ports = provider_router['ports']
+        router = provider_router['router']
+
+        router_obj = {'router': {'name': router['name'],
+                                 'tenant_id': tenant,
+                                 'admin_state_up': router['admin_state_up']}}
+        if dry_run:
+            print('create_router: ' + str(router_obj))
+            upl_router = {'id': 'uplink_router_id'}
+        else:
+            upl_router = self.mc.client.create_router(self.mc.ctx, router_obj)
+            LOG.debug('Created router: ' + str(upl_router))
+
+        for port in ports:
+            base_name = port['host'] + "_" + port['iface']
+            net_obj = {'network': {'name': base_name + "_uplink_net",
+                                   'tenant_id': tenant,
+                                   'shared': False,
+                                   'provider:network_type': 'uplink',
+                                   'admin_state_up': True}}
+            if dry_run:
+                print('create_network: ' + str(net_obj))
+                upl_net = {'id': 'uplink_net_id'}
+            else:
+                upl_net = self.mc.client.create_network(self.mc.ctx, net_obj)
+                LOG.debug('Created network: ' + str(upl_net))
+
+            subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
+                                     'network_id': upl_net['id'],
+                                     'ip_version': 4,
+                                     'cidr': port['network_cidr'],
+                                     'dns_nameservers': [],
+                                     'host_routes': [],
+                                     'allocation_pools': None,
+                                     'enable_dhcp': False,
+                                     'tenant_id': tenant,
+                                     'admin_state_up': True}}
+            if dry_run:
+                print('create_subnet: ' + str(subnet_obj))
+                upl_sub = {'id': 'uplink_subnet_id'}
+            else:
+                upl_sub = self.mc.client.create_subnet(self.mc.ctx, subnet_obj)
+                LOG.debug('Created subnet: ' + str(upl_sub))
+
+            port_obj = {'port': {'name': base_name + "_uplink_port",
+                                 'tenant_id': 'admin',
+                                 'network_id': upl_net['id'],
+                                 'device_id': '',
+                                 'device_owner': '',
+                                 'mac_address': port['mac'],
+                                 'fixed_ips': [
+                                     {'subnet_id': upl_sub['id'],
+                                      'ip_address': port['ip_address']}],
+                                 'binding:host_id': port['host'],
+                                 'binding:profile': {
+                                     'interface_name': port['iface']},
+                                 'admin_state_up': port['admin_state_up']}}
+            if dry_run:
+                print('create_port: ' + str(port_obj))
+                bound_port = {'id': 'uplink_port_id'}
+            else:
+                bound_port = self.mc.client.create_port(self.mc.ctx, port_obj)
+                LOG.debug('Created port: ' + str(bound_port))
+
+            iface_obj = {'port_id': bound_port['id']}
+            if dry_run:
+                print('add_router_interface: ' + str(iface_obj))
+            else:
+                iface = self.mc.client.add_router_interface(self.mc.ctx,
+                                                            upl_router['id'],
+                                                            iface_obj)
+                LOG.debug('Added interface: ' + str(iface))
+
+        subnet_ids = _get_external_subnet_ids(nets)
+        for subnet in subnet_ids:
+            iface_obj = {'subnet_id': subnet}
+            if dry_run:
+                print('add_router_interface: ' + str(iface_obj))
+            else:
+                iface = self.mc.client.add_router_interface(
+                    self.mc.ctx, upl_router['id'], iface_obj)
+                LOG.debug('Added ext-net interface: ' + str(iface))
 
     def prepare(self):
         """Prepares a map of object ID -> object from Neutron DB"""
