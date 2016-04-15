@@ -17,6 +17,7 @@ from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
 import logging
+from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -34,14 +35,14 @@ def _cidr_from_port(p):
     return p['networkAddress'] + "/" + str(p['networkLength'])
 
 
-def _make_provider_router_port_dict(p, host, ifName):
+def _make_provider_router_port_dict(p, host, ifname):
     return {
         'admin_state_up': p['adminStateUp'],
         'network_cidr': _cidr_from_port(p),
         'mac': p['portMac'],
         'ip_address': p['portAddress'],
         'host': host,
-        'iface': ifName
+        'iface': ifname
     }
 
 
@@ -181,6 +182,28 @@ class DataWriter(object):
         self.mc = context.get_context()
         self.data = data
         self.dry_run = dry_run
+
+    def _create_tunnel_zones(self, tzs):
+        for tz in tzs:
+            if self.dry_run:
+                print("api.add_tunnel_zone()"
+                      ".type(" + tz['type'] + ")"
+                      ".name(" + tz['name'] + ")"
+                      ".create()")
+            else:
+                try:
+                    (self.mc.mn_api.add_tunnel_zone()
+                     .type(tz['type'])
+                     .name(tz['name'])
+                     .create())
+                except wexc.HTTPClientError as e:
+                    if e.code == wexc.HTTPConflict.code:
+                        LOG.warn('Tunnel zone already exists: ' + tz['name'])
+
+    def create_objects(self):
+        """Create all the midonet objects"""
+        mido_data = self.data['midonet']
+        self._create_tunnel_zones(mido_data["tunnel_zones"])
 
     def bind_hosts(self):
         """Execute the migration

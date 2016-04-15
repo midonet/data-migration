@@ -44,6 +44,7 @@ def main():
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
                              '\tneutron_export: export Neutron data\n'
+                             '\tmidonet_migrate: migrate MidoNet data'
                              '\tprovider_router: convert provider router to\n'
                              '\t                 edge router\n'
                              '\tbind:  bind hosts to tunnel zones and ports\n')
@@ -91,6 +92,10 @@ def main():
         source = sys.stdin.readline()
         nm = nd.DataWriter(json.loads(source), dry_run=dry_run)
         nm.create_edge_router(tenant)
+    elif args.command == "midonet_migrate":
+        source = sys.stdin.readline()
+        mm = md.DataWriter(json.loads(source), dry_run=dry_run)
+        mm.create_objects()
     elif args.command == "bind":
         source = sys.stdin.readline()
         mm = md.DataWriter(json.loads(source), dry_run=dry_run)
