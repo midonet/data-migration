@@ -36,9 +36,8 @@ def main():
 
     parser.add_argument('command', action='store',
                         help="Command to run:\n\n"
-                             '\tneutron_prepare: prepare Neutron data\n'
+                             '\tprepare: prepare intermediary data in JSON\n'
                              '\tneutron_export: export Neutron data\n'
-                             '\tprepare: prepare MidoNet data\n'
                              '\tbind:  bind hosts to tunnel zones and ports\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
@@ -62,21 +61,24 @@ def main():
     LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
 
     # Start the migration
-    if args.command == "neutron_prepare":
+    if args.command == "prepare":
         nm = nd.NeutronDataMigrator()
-        print(json.dumps(nm.prepare()))
+        mm = md.MidonetDataMigrator()
+        output = {
+            "neutron": nm.prepare(),
+            "midonet": mm.prepare()
+        }
+        print(json.dumps(output))
     elif args.command == "neutron_export":
         source = sys.stdin.readline()
+        source_dict = json.loads(source)
         nm = nd.NeutronDataMigrator()
-        nm.migrate(json.loads(source), dry_run=dry_run)
-    elif args.command == "prepare":
-        mm = md.MidonetDataMigrator()
-        print(json.dumps(mm.prepare()))
+        nm.migrate(source_dict['neutron'], dry_run=dry_run)
     elif args.command == "bind":
         source = sys.stdin.readline()
+        source_dict = json.loads(source)
         mm = md.MidonetDataMigrator()
-        m_data = json.loads(source)
-        mm.bind_hosts(m_data["host_bindings"], dry_run=dry_run)
+        mm.bind_hosts(source_dict['midonet']['host_bindings'], dry_run=dry_run)
     else:
         print("Invalid command: " + args.command, file=sys.stderr)
         parser.print_help()
