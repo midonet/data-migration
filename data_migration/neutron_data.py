@@ -22,7 +22,7 @@ import midonet.neutron.db.task_db as task
 LOG = logging.getLogger(name="data_migration")
 
 
-def _get_neutron_objects(key, func, context, filter_list=None):
+def _get_neutron_objects(key, func, ctx, filter_list=None):
     if filter_list is None:
         filter_list = []
 
@@ -37,7 +37,7 @@ def _get_neutron_objects(key, func, context, filter_list=None):
         if new_filter:
             filters.update({new_filter[0]: new_filter[1]})
 
-    object_list = func(context=context, filters=filters if filters else None)
+    object_list = func(context=ctx, filters=filters if filters else None)
 
     for f in filter_list:
         f.post_filter(object_list)
@@ -126,9 +126,8 @@ def _task_router_routes(_topo, task_model, rid, router_obj):
     return None
 
 
-def _dry_run_output(task):
-    return 'Task: ' + ', '.join([task['type'], task['data_type'],
-                                 task['resource_id']])
+def _dry_run_output(t):
+    return 'Task: ' + ', '.join([t['type'], t['data_type'], t['resource_id']])
 
 
 def _create_task_list(obj_map):
@@ -179,14 +178,14 @@ class DataReader(object):
     def __init__(self):
         self.mc = context.get_context()
 
-    def _get_subnet_router(self, context, filters=None):
+    def _get_subnet_router(self, ctx, filters=None):
         new_list = []
         client = self.mc.client
-        subnets = client.get_subnets(context=context)
+        subnets = client.get_subnets(context=ctx)
         for subnet in subnets:
             subnet_id = subnet['id']
             subnet_gw_ip = subnet['gateway_ip']
-            interfaces = client.get_ports(context=context, filters=filters)
+            interfaces = client.get_ports(context=ctx, filters=filters)
             gw_iface = next(
                 (i for i in interfaces
                     if ('fixed_ips' in i and len(i['fixed_ips']) > 0 and
@@ -213,7 +212,7 @@ class DataReader(object):
                                    check_list=['network:router_interface'])]),
                 ('subnet-gateways', self._get_subnet_router,
                  [utils.ListFilter(check_key='device_owner',
-                             check_list=['network:router_interface'])]),
+                                   check_list=['network:router_interface'])]),
                 ('floating-ips', self.mc.client.get_floatingips, []),
                 ('load-balancer-pools', self.mc.lb_client.get_pools, []),
                 ('members', self.mc.lb_client.get_members, []),
@@ -228,7 +227,7 @@ class DataReader(object):
         obj_map = {}
         for key, func, filter_list in self._get_queries:
             obj_map.update(_get_neutron_objects(key=key, func=func,
-                                                context=self.mc.ctx,
+                                                ctx=self.mc.ctx,
                                                 filter_list=filter_list))
         return obj_map
 
