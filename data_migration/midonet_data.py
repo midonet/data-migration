@@ -53,14 +53,35 @@ def _convert_to_host_id_to_name_map(hosts):
     return h_map
 
 
+def _is_neutron_chain(chain):
+    name = chain['name']
+    return (name.startswith("OS_PRE_ROUTING_") or
+            name.startswith("OS_POST_ROUTING_") or
+            name.startswith("OS_PORT_") or
+            name.startswith("OS_SG_"))
+
+
+def _chain_filter(chains):
+    return [c for c in chains if not _is_neutron_chain(c)]
+
+
 class DataReader(object):
 
-    def __init__(self):
+    def __init__(self, nd):
         self.mc = context.get_context()
         self._provider_router = None
+        self._nd = nd
 
-    def _get_objects_by_path(self, path):
-        return self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
+    def _get_objects_by_path(self, path, ids_exlude=None, filter_func=None):
+        objs = self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
+
+        if ids_exlude:
+            objs = [o for o in objs if o['id'] not in ids_exlude]
+
+        if filter_func:
+            objs = filter_func(objs)
+
+        return objs
 
     def _get_objects_by_url(self, url):
         return self.mc.mn_client.get(uri=url, media_type="*/*")
@@ -164,13 +185,22 @@ class DataReader(object):
             'ports': ports
         }
 
+    def _neutron_ids(self, key):
+        return set(self._nd[key].keys())
+
     def prepare(self):
+        bridges = self._get_objects_by_path(
+            "bridges", ids_exlude=self._neutron_ids('networks')) or []
+        chains = self._get_objects_by_path("chains",
+                                           filter_func=_chain_filter) or []
         tzs = self._get_objects_by_path('tunnel_zones') or []
         hosts = self._get_objects_by_path('hosts') or []
         host2tz_map = self._convert_to_host2tz_map(tzs)
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
             "hosts": hosts,
+            "bridges": bridges,
+            "chains": chains,
             "tunnel_zones": tzs,
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
@@ -226,6 +256,32 @@ class DataWriter(object):
                     if e.code == wexc.HTTPConflict.code:
                         LOG.warn('Host already exists: ' + h['id'])
 
+    def _create_chains(self, chains):
+        for chain in chains:
+            if self.dry_run:
+                print("api.add_chain()"
+                      ".name(" + chain['name'] + ")"
+                      ".create()")
+            else:
+                return (self.mc.mn_api.add_chain()
+                        .name(chain['name'])
+                        .create())
+
+    def _create_bridges(self, bridges):
+        for bridge in bridges:
+            if self.dry_run:
+                print("api.add_bridge()"
+                      ".name(" + bridge['name'] + ")"
+                      ".inbound_filter_id(" + bridge['inboundFilterId'] + ")"
+                      ".outbound_filter_id(" + bridge['outboundFilterId'] + ")"
+                      ".create()")
+            else:
+                return (self.mc.mn_api.add_bridge()
+                        .name(bridge['name'])
+                        .inbound_filter_id(bridge['inboundFilterId'])
+                        .outbound_filter_id(bridge['outboundFilterId'])
+                        .create())
+
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
             if self.dry_run:
@@ -257,10 +313,16 @@ class DataWriter(object):
                                    "interface": <interface>}, ...],
                         "tunnel_zones": [{"id": <tunnel_zone_id>,
                                           "ip_address": <ip_address>}, ...]
-                       }, ...]
+                       }, ...],
+           "chains": [{"name": <chain_name>}, ...],
+           "bridges": [{"name": <bridge_name>,
+                        "inboundFilterId": <inbound_chain_id>,
+                        "outboundFilterId": <outbound_chain_id>}, ...]
         }
         """
         mido_data = self.data['midonet']
         self._create_hosts(mido_data['hosts'])
         self._create_tunnel_zones(mido_data["tunnel_zones"])
+        self._create_chains(mido_data['chains'])
+        self._create_bridges(mido_data['bridges'])
         self._bind_hosts(mido_data['host_bindings'])

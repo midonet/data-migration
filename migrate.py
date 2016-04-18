@@ -73,9 +73,10 @@ def main():
     # Start the migration
     if args.command == "prepare":
         nm = nd.DataReader()
-        mm = md.DataReader()
+        n_data = nm.prepare()
+        mm = md.DataReader(n_data)
         output = {
-            "neutron": nm.prepare(),
+            "neutron": n_data,
             "midonet": mm.prepare()
         }
         print(json.dumps(output))
