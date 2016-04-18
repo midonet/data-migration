@@ -44,6 +44,7 @@ def main():
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
                              '\tneutron_export: export Neutron data\n'
+                             '\tmidonet_migrate: migrate MidoNet data'
                              '\tprovider_router: convert provider router to\n'
                              '\t                 edge router\n'
                              '\tbind:  bind hosts to tunnel zones and ports\n')
@@ -72,8 +73,8 @@ def main():
 
     # Start the migration
     if args.command == "prepare":
-        nm = nd.NeutronDataMigrator()
-        mm = md.MidonetDataMigrator()
+        nm = nd.DataReader()
+        mm = md.DataReader()
         output = {
             "neutron": nm.prepare(),
             "midonet": mm.prepare()
@@ -81,25 +82,24 @@ def main():
         print(json.dumps(output))
     elif args.command == "neutron_export":
         source = sys.stdin.readline()
-        source_dict = json.loads(source)
-        nm = nd.NeutronDataMigrator()
-        nm.migrate(source_dict['neutron'], dry_run=dry_run)
+        nm = nd.DataWriter(json.loads(source), dry_run=dry_run)
+        nm.migrate()
     elif args.command == "provider_router":
         tenant = args.tenant
         if not tenant:
             _exit_on_error("tenant is required for this command", parser)
 
         source = sys.stdin.readline()
-        source_dict = json.loads(source)
-        nm = nd.NeutronDataMigrator()
-        nm.create_edge_router(source_dict['midonet']['provider_router'],
-                              source_dict['neutron']['networks'], tenant,
-                              dry_run=dry_run)
+        nm = nd.DataWriter(json.loads(source), dry_run=dry_run)
+        nm.create_edge_router(tenant)
+    elif args.command == "midonet_migrate":
+        source = sys.stdin.readline()
+        mm = md.DataWriter(json.loads(source), dry_run=dry_run)
+        mm.create_objects()
     elif args.command == "bind":
         source = sys.stdin.readline()
-        source_dict = json.loads(source)
-        mm = md.MidonetDataMigrator()
-        mm.bind_hosts(source_dict['midonet']['host_bindings'], dry_run=dry_run)
+        mm = md.DataWriter(json.loads(source), dry_run=dry_run)
+        mm.bind_hosts()
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

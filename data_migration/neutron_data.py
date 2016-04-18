@@ -22,7 +22,7 @@ import midonet.neutron.db.task_db as task
 LOG = logging.getLogger(name="data_migration")
 
 
-def _get_neutron_objects(key, func, context, filter_list=None):
+def _get_neutron_objects(key, func, ctx, filter_list=None):
     if filter_list is None:
         filter_list = []
 
@@ -37,7 +37,7 @@ def _get_neutron_objects(key, func, context, filter_list=None):
         if new_filter:
             filters.update({new_filter[0]: new_filter[1]})
 
-    object_list = func(context=context, filters=filters if filters else None)
+    object_list = func(context=ctx, filters=filters if filters else None)
 
     for f in filter_list:
         f.post_filter(object_list)
@@ -126,9 +126,8 @@ def _task_router_routes(_topo, task_model, rid, router_obj):
     return None
 
 
-def _dry_run_output(task):
-    return 'Task: ' + ', '.join([task['type'], task['data_type'],
-                                 task['resource_id']])
+def _dry_run_output(t):
+    return 'Task: ' + ', '.join([t['type'], t['data_type'], t['resource_id']])
 
 
 def _create_task_list(obj_map):
@@ -174,19 +173,19 @@ _CREATES = [
 ]
 
 
-class NeutronDataMigrator(object):
+class DataReader(object):
 
     def __init__(self):
         self.mc = context.get_context()
 
-    def _get_subnet_router(self, context, filters=None):
+    def _get_subnet_router(self, ctx, filters=None):
         new_list = []
         client = self.mc.client
-        subnets = client.get_subnets(context=context)
+        subnets = client.get_subnets(context=ctx)
         for subnet in subnets:
             subnet_id = subnet['id']
             subnet_gw_ip = subnet['gateway_ip']
-            interfaces = client.get_ports(context=context, filters=filters)
+            interfaces = client.get_ports(context=ctx, filters=filters)
             gw_iface = next(
                 (i for i in interfaces
                     if ('fixed_ips' in i and len(i['fixed_ips']) > 0 and
@@ -213,7 +212,7 @@ class NeutronDataMigrator(object):
                                    check_list=['network:router_interface'])]),
                 ('subnet-gateways', self._get_subnet_router,
                  [utils.ListFilter(check_key='device_owner',
-                             check_list=['network:router_interface'])]),
+                                   check_list=['network:router_interface'])]),
                 ('floating-ips', self.mc.client.get_floatingips, []),
                 ('load-balancer-pools', self.mc.lb_client.get_pools, []),
                 ('members', self.mc.lb_client.get_members, []),
@@ -222,16 +221,35 @@ class NeutronDataMigrator(object):
                  [utils.MinLengthFilter(field='pools', min_len=1)]),
         ]
 
-    def migrate(self, obj_map, dry_run=False):
+    def prepare(self):
+        """Prepares a map of object ID -> object from Neutron DB"""
+        LOG.info('Preparing Neutron data')
+        obj_map = {}
+        for key, func, filter_list in self._get_queries:
+            obj_map.update(_get_neutron_objects(key=key, func=func,
+                                                ctx=self.mc.ctx,
+                                                filter_list=filter_list))
+        return obj_map
+
+
+class DataWriter(object):
+
+    def __init__(self, data, dry_run=False):
+        self.mc = context.get_context()
+        self.data = data
+        self.dry_run = dry_run
+
+    def migrate(self):
         LOG.info('Running migration process')
+        obj_map = self.data['neutron']
         tasks = _create_task_list(obj_map)
         for t in tasks:
-            if dry_run:
+            if self.dry_run:
                 print(_dry_run_output(t))
             else:
                 task.create_task(self.mc.ctx, **t)
 
-    def create_edge_router(self, provider_router, nets, tenant, dry_run=False):
+    def create_edge_router(self, tenant):
         """Create the edge router
 
         The expected input is:
@@ -253,13 +271,15 @@ class NeutronDataMigrator(object):
 
         nets is a list of Neutron network objects.
         """
+        provider_router = self.data['midonet']['provider_router']
+        nets = self.data['neutron']['networks']
         ports = provider_router['ports']
         router = provider_router['router']
 
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        if dry_run:
+        if self.dry_run:
             print('create_router: ' + str(router_obj))
             upl_router = {'id': 'uplink_router_id'}
         else:
@@ -273,7 +293,7 @@ class NeutronDataMigrator(object):
                                    'shared': False,
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
-            if dry_run:
+            if self.dry_run:
                 print('create_network: ' + str(net_obj))
                 upl_net = {'id': 'uplink_net_id'}
             else:
@@ -290,7 +310,7 @@ class NeutronDataMigrator(object):
                                      'enable_dhcp': False,
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
-            if dry_run:
+            if self.dry_run:
                 print('create_subnet: ' + str(subnet_obj))
                 upl_sub = {'id': 'uplink_subnet_id'}
             else:
@@ -310,7 +330,7 @@ class NeutronDataMigrator(object):
                                  'binding:profile': {
                                      'interface_name': port['iface']},
                                  'admin_state_up': port['admin_state_up']}}
-            if dry_run:
+            if self.dry_run:
                 print('create_port: ' + str(port_obj))
                 bound_port = {'id': 'uplink_port_id'}
             else:
@@ -318,7 +338,7 @@ class NeutronDataMigrator(object):
                 LOG.debug('Created port: ' + str(bound_port))
 
             iface_obj = {'port_id': bound_port['id']}
-            if dry_run:
+            if self.dry_run:
                 print('add_router_interface: ' + str(iface_obj))
             else:
                 iface = self.mc.client.add_router_interface(self.mc.ctx,
@@ -329,19 +349,9 @@ class NeutronDataMigrator(object):
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
-            if dry_run:
+            if self.dry_run:
                 print('add_router_interface: ' + str(iface_obj))
             else:
                 iface = self.mc.client.add_router_interface(
                     self.mc.ctx, upl_router['id'], iface_obj)
                 LOG.debug('Added ext-net interface: ' + str(iface))
-
-    def prepare(self):
-        """Prepares a map of object ID -> object from Neutron DB"""
-        LOG.info('Preparing Neutron data')
-        obj_map = {}
-        for key, func, filter_list in self._get_queries:
-            obj_map.update(_get_neutron_objects(key=key, func=func,
-                                                context=self.mc.ctx,
-                                                filter_list=filter_list))
-        return obj_map

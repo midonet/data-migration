@@ -17,6 +17,7 @@ from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
 import logging
+from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -34,14 +35,14 @@ def _cidr_from_port(p):
     return p['networkAddress'] + "/" + str(p['networkLength'])
 
 
-def _make_provider_router_port_dict(p, host, ifName):
+def _make_provider_router_port_dict(p, host, ifname):
     return {
         'admin_state_up': p['adminStateUp'],
         'network_cidr': _cidr_from_port(p),
         'mac': p['portMac'],
         'ip_address': p['portAddress'],
         'host': host,
-        'iface': ifName
+        'iface': ifname
     }
 
 
@@ -52,7 +53,7 @@ def _convert_to_host_id_to_name_map(hosts):
     return h_map
 
 
-class MidonetDataMigrator(object):
+class DataReader(object):
 
     def __init__(self):
         self.mc = context.get_context()
@@ -174,7 +175,37 @@ class MidonetDataMigrator(object):
             "provider_router": self._prepare_provider_router(host_name_map)
         }
 
-    def bind_hosts(self, bindings, dry_run=False):
+
+class DataWriter(object):
+
+    def __init__(self, data, dry_run=False):
+        self.mc = context.get_context()
+        self.data = data
+        self.dry_run = dry_run
+
+    def _create_tunnel_zones(self, tzs):
+        for tz in tzs:
+            if self.dry_run:
+                print("api.add_tunnel_zone()"
+                      ".type(" + tz['type'] + ")"
+                      ".name(" + tz['name'] + ")"
+                      ".create()")
+            else:
+                try:
+                    (self.mc.mn_api.add_tunnel_zone()
+                     .type(tz['type'])
+                     .name(tz['name'])
+                     .create())
+                except wexc.HTTPClientError as e:
+                    if e.code == wexc.HTTPConflict.code:
+                        LOG.warn('Tunnel zone already exists: ' + tz['name'])
+
+    def create_objects(self):
+        """Create all the midonet objects"""
+        mido_data = self.data['midonet']
+        self._create_tunnel_zones(mido_data["tunnel_zones"])
+
+    def bind_hosts(self):
         """Execute the migration
 
         Input format (see '_prepare_host_bindings'):
@@ -190,10 +221,11 @@ class MidonetDataMigrator(object):
         This is expected to be executed AFTER the hosts are upgraded.
         Otherwise, MidoNet will reject hosts that are unknown.
         """
+        bindings = self.data['midonet']['host_bindings']
         for hid, h in iter(bindings.items()):
             tzs = h["tunnel_zones"]
             for tz in tzs:
-                if dry_run:
+                if self.dry_run:
                     print("tz.add_tunnel_zone_host()"
                           ".ip_address(" + tz['ip_address'] + ")"
                           ".host_id(" + hid + ").create()")
@@ -206,7 +238,7 @@ class MidonetDataMigrator(object):
             host = self.mc.mn_api.get_host(hid)
             ports = h["ports"]
             for p in ports:
-                if dry_run:
+                if self.dry_run:
                     print("api.add_host_interface_port(host, "
                           "port_id=" + p["id"] +
                           ", interface_name=" + p["interface"] + ")")
