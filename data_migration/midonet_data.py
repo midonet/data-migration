@@ -201,7 +201,14 @@ class DataWriter(object):
                         LOG.warn('Tunnel zone already exists: ' + tz['name'])
 
     def create_objects(self):
-        """Create all the midonet objects"""
+        """Create all the midonet objects
+
+        Expected input:
+
+        {
+           "tunnel_zones": [{"type": <tz_type>, "name": <tz_name>, ...]
+        }
+        """
         mido_data = self.data['midonet']
         self._create_tunnel_zones(mido_data["tunnel_zones"])
 
