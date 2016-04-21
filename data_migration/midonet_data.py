@@ -190,11 +190,11 @@ class DataReader(object):
 
     def prepare(self):
         bridges = self._get_objects_by_path(
-            "bridges", ids_exlude=self._neutron_ids('networks')) or []
+            "bridges", ids_exlude=self._neutron_ids('networks'))
         chains = self._get_objects_by_path("chains",
-                                           filter_func=_chain_filter) or []
-        tzs = self._get_objects_by_path('tunnel_zones') or []
-        hosts = self._get_objects_by_path('hosts') or []
+                                           filter_func=_chain_filter)
+        tzs = self._get_objects_by_path('tunnel_zones')
+        hosts = self._get_objects_by_path('hosts')
         host2tz_map = self._convert_to_host2tz_map(tzs)
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
