@@ -170,6 +170,7 @@ class DataReader(object):
         host2tz_map = self._convert_to_host2tz_map(tzs)
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
+            "hosts": hosts,
             "tunnel_zones": tzs,
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
@@ -182,6 +183,48 @@ class DataWriter(object):
         self.mc = context.get_context()
         self.data = data
         self.dry_run = dry_run
+
+    def _bind_hosts(self, bindings):
+        for hid, h in iter(bindings.items()):
+            tzs = h["tunnel_zones"]
+            for tz in tzs:
+                if self.dry_run:
+                    print("tz.add_tunnel_zone_host()"
+                          ".ip_address(" + tz['ip_address'] + ")"
+                          ".host_id(" + hid + ").create()")
+                else:
+                    tz = self.mc.mn_api.get_tunnel_zone(tz['id'])
+                    (tz.add_tunnel_zone_host()
+                     .ip_address(h['ip_address'])
+                     .host_id(hid).create())
+
+            host = self.mc.mn_api.get_host(hid)
+            ports = h["ports"]
+            for p in ports:
+                if self.dry_run:
+                    print("api.add_host_interface_port(host, "
+                          "port_id=" + p["id"] +
+                          ", interface_name=" + p["interface"] + ")")
+                else:
+                    self.mc.mn_api.add_host_interface_port(
+                        host, port_id=p["id"], interface_name=p["interface"])
+
+    def _create_hosts(self, hosts):
+        for h in hosts:
+            if self.dry_run:
+                print("api.add_host()"
+                      ".id(" + h['id'] + ")"
+                      ".name(" + h['name'] + ")"
+                      ".create()")
+            else:
+                try:
+                    (self.mc.mn_api.add_host()
+                     .id(h['id'])
+                     .name(h['name'])
+                     .create())
+                except wexc.HTTPClientError as e:
+                    if e.code == wexc.HTTPConflict.code:
+                        LOG.warn('Host already exists: ' + h['id'])
 
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
@@ -206,49 +249,18 @@ class DataWriter(object):
         Expected input:
 
         {
-           "tunnel_zones": [{"type": <tz_type>, "name": <tz_name>, ...]
+           "hosts": [{"id": <host_id>, "name": <host_name>}, ...],
+           "tunnel_zones": [{"type": <tz_type>, "name": <tz_name>, ...],
+           "host_bindings": [
+                       {"host_id": {"name": <hostname>,
+                        "ports": [{"id": <port_id>,
+                                   "interface": <interface>}, ...],
+                        "tunnel_zones": [{"id": <tunnel_zone_id>,
+                                          "ip_address": <ip_address>}, ...]
+                       }, ...]
         }
         """
         mido_data = self.data['midonet']
+        self._create_hosts(mido_data['hosts'])
         self._create_tunnel_zones(mido_data["tunnel_zones"])
-
-    def bind_hosts(self):
-        """Execute the migration
-
-        Input format (see '_prepare_host_bindings'):
-
-            {"host_id": {"name": <hostname>,
-                         "ports": [{"id": <port_id>,
-                                   "interface": <interface>}, ...],
-                         "tunnel_zones": [{"id": <tunnel_zone_id>,
-                                           "ip_address": <ip_address>}, ...]
-                         },
-            }
-
-        This is expected to be executed AFTER the hosts are upgraded.
-        Otherwise, MidoNet will reject hosts that are unknown.
-        """
-        bindings = self.data['midonet']['host_bindings']
-        for hid, h in iter(bindings.items()):
-            tzs = h["tunnel_zones"]
-            for tz in tzs:
-                if self.dry_run:
-                    print("tz.add_tunnel_zone_host()"
-                          ".ip_address(" + tz['ip_address'] + ")"
-                          ".host_id(" + hid + ").create()")
-                else:
-                    tz = self.mc.mn_api.get_tunnel_zone(tz['id'])
-                    (tz.add_tunnel_zone_host()
-                     .ip_address(h['ip_address'])
-                     .host_id(hid).create())
-
-            host = self.mc.mn_api.get_host(hid)
-            ports = h["ports"]
-            for p in ports:
-                if self.dry_run:
-                    print("api.add_host_interface_port(host, "
-                          "port_id=" + p["id"] +
-                          ", interface_name=" + p["interface"] + ")")
-                else:
-                    self.mc.mn_api.add_host_interface_port(
-                        host, port_id=p["id"], interface_name=p["interface"])
+        self._bind_hosts(mido_data['host_bindings'])

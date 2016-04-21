@@ -46,8 +46,7 @@ def main():
                              '\tneutron_export: export Neutron data\n'
                              '\tmidonet_migrate: migrate MidoNet data'
                              '\tprovider_router: convert provider router to\n'
-                             '\t                 edge router\n'
-                             '\tbind:  bind hosts to tunnel zones and ports\n')
+                             '\t                 edge router\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -96,10 +95,6 @@ def main():
         source = sys.stdin.readline()
         mm = md.DataWriter(json.loads(source), dry_run=dry_run)
         mm.create_objects()
-    elif args.command == "bind":
-        source = sys.stdin.readline()
-        mm = md.DataWriter(json.loads(source), dry_run=dry_run)
-        mm.bind_hosts()
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 
