@@ -200,6 +200,9 @@ class DataReader(object):
                                            filter_func=_chain_filter)
         routers = self._get_objects_by_path(
             "routers", ids_exlude=self._router_exclude_ids())
+        ip_addr_groups = self._get_objects_by_path(
+            "ip_addr_groups", ids_exlude=self._neutron_ids("security-groups"))
+
         tzs = self._get_objects_by_path('tunnel_zones')
         hosts = self._get_objects_by_path('hosts')
         host2tz_map = self._convert_to_host2tz_map(tzs)
@@ -209,6 +212,7 @@ class DataReader(object):
             "bridges": bridges,
             "routers": routers,
             "chains": chains,
+            "ip_addr_groups": ip_addr_groups,
             "tunnel_zones": tzs,
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
@@ -315,6 +319,17 @@ class DataWriter(object):
                         .admin_state_up(router['adminStateUp'])
                         .create())
 
+    def _create_ip_addr_groups(self, ip_addr_groups):
+        for ip_addr_group in ip_addr_groups:
+            if self.dry_run:
+                print("api.add_ip_addr_group()"
+                      ".name(" + ip_addr_group['name'] + ")"
+                      ".create()")
+            else:
+                return (self.mc.mn_api.add_ip_addr_group()
+                        .name(ip_addr_group['name'])
+                        .create())
+
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
             if self.dry_run:
@@ -358,6 +373,7 @@ class DataWriter(object):
                         "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
                         "outboundFilterId": <outbound_chain_id>}, ...],
+            "ip_addr_groups": [{"name": <ip_addr_group_name>}, ...]
         }
         """
         mido_data = self.data['midonet']
@@ -366,4 +382,5 @@ class DataWriter(object):
         self._create_chains(mido_data['chains'])
         self._create_bridges(mido_data['bridges'])
         self._create_routers(mido_data['routers'])
+        self._create_ip_addr_groups(mido_data['ip_addr_groups'])
         self._bind_hosts(mido_data['host_bindings'])
