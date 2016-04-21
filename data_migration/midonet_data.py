@@ -261,10 +261,12 @@ class DataWriter(object):
             if self.dry_run:
                 print("api.add_chain()"
                       ".name(" + chain['name'] + ")"
+                      ".tenant_id(" + chain['tenantId'] + ")"
                       ".create()")
             else:
                 return (self.mc.mn_api.add_chain()
                         .name(chain['name'])
+                        .tenant_id(chain['tenantId'])
                         .create())
 
     def _create_bridges(self, bridges):
@@ -272,14 +274,18 @@ class DataWriter(object):
             if self.dry_run:
                 print("api.add_bridge()"
                       ".name(" + bridge['name'] + ")"
+                      ".tenant_id(" + bridge['tenantId'] + ")"
                       ".inbound_filter_id(" + bridge['inboundFilterId'] + ")"
                       ".outbound_filter_id(" + bridge['outboundFilterId'] + ")"
+                      ".admin_state_up(" + bridge['adminStateUp'] + ")"
                       ".create()")
             else:
                 return (self.mc.mn_api.add_bridge()
                         .name(bridge['name'])
+                        .tenant_id(bridge['tenantId'])
                         .inbound_filter_id(bridge['inboundFilterId'])
                         .outbound_filter_id(bridge['outboundFilterId'])
+                        .admin_state_up(bridge['adminStateUp'])
                         .create())
 
     def _create_tunnel_zones(self, tzs):
@@ -314,10 +320,12 @@ class DataWriter(object):
                         "tunnel_zones": [{"id": <tunnel_zone_id>,
                                           "ip_address": <ip_address>}, ...]
                        }, ...],
-           "chains": [{"name": <chain_name>}, ...],
+           "chains": [{"name": <chain_name>, "tenantId": <tenant_id>}, ...],
            "bridges": [{"name": <bridge_name>,
+                        "tenantId": <tenant_id>,
+                        "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
-                        "outboundFilterId": <outbound_chain_id>}, ...]
+                        "outboundFilterId": <outbound_chain_id>}, ...],
         }
         """
         mido_data = self.data['midonet']
