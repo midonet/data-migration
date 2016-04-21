@@ -188,11 +188,18 @@ class DataReader(object):
     def _neutron_ids(self, key):
         return set(self._nd[key].keys())
 
+    def _router_exclude_ids(self):
+        ids = self._neutron_ids('routers')
+        ids.add(self.provider_router['id'])
+        return ids
+
     def prepare(self):
         bridges = self._get_objects_by_path(
             "bridges", ids_exlude=self._neutron_ids('networks'))
         chains = self._get_objects_by_path("chains",
                                            filter_func=_chain_filter)
+        routers = self._get_objects_by_path(
+            "routers", ids_exlude=self._router_exclude_ids())
         tzs = self._get_objects_by_path('tunnel_zones')
         hosts = self._get_objects_by_path('hosts')
         host2tz_map = self._convert_to_host2tz_map(tzs)
@@ -200,6 +207,7 @@ class DataReader(object):
         return {
             "hosts": hosts,
             "bridges": bridges,
+            "routers": routers,
             "chains": chains,
             "tunnel_zones": tzs,
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
@@ -288,6 +296,25 @@ class DataWriter(object):
                         .admin_state_up(bridge['adminStateUp'])
                         .create())
 
+    def _create_routers(self, routers):
+        for router in routers:
+            if self.dry_run:
+                print("api.add_router()"
+                      ".name(" + router['name'] + ")"
+                      ".tenant_id(" + router['tenantId'] + ")"
+                      ".inbound_filter_id(" + router['inboundFilterId'] + ")"
+                      ".outbound_filter_id(" + router['outboundFilterId'] + ")"
+                      ".admin_state_up(" + router['adminStateUp'] + ")"
+                      ".create()")
+            else:
+                return (self.mc.mn_api.add_router()
+                        .name(router['name'])
+                        .tenant_id(router['tenantId'])
+                        .inbound_filter_id(router['inboundFilterId'])
+                        .outbound_filter_id(router['outboundFilterId'])
+                        .admin_state_up(router['adminStateUp'])
+                        .create())
+
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
             if self.dry_run:
@@ -326,6 +353,11 @@ class DataWriter(object):
                         "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
                         "outboundFilterId": <outbound_chain_id>}, ...],
+           "routers": [{"name": <router_name>,
+                        "tenantId": <tenant_id>,
+                        "adminStateUp": <admin_state_up>,
+                        "inboundFilterId": <inbound_chain_id>,
+                        "outboundFilterId": <outbound_chain_id>}, ...],
         }
         """
         mido_data = self.data['midonet']
@@ -333,4 +365,5 @@ class DataWriter(object):
         self._create_tunnel_zones(mido_data["tunnel_zones"])
         self._create_chains(mido_data['chains'])
         self._create_bridges(mido_data['bridges'])
+        self._create_routers(mido_data['routers'])
         self._bind_hosts(mido_data['host_bindings'])
