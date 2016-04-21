@@ -222,13 +222,18 @@ class DataReader(object):
         ]
 
     def prepare(self):
-        """Prepares a map of object ID -> object from Neutron DB"""
+        """Prepares a map of object ID -> object from Neutron DB
+
+        It also includes 'tasks' key that includes a list of task entries that
+        will be created in migration.
+        """
         LOG.info('Preparing Neutron data')
         obj_map = {}
         for key, func, filter_list in self._get_queries:
             obj_map.update(_get_neutron_objects(key=key, func=func,
                                                 context=self.mc.ctx,
                                                 filter_list=filter_list))
+        obj_map["tasks"] = _create_task_list(obj_map)
         return obj_map
 
 
@@ -241,8 +246,7 @@ class DataWriter(object):
 
     def migrate(self):
         LOG.info('Running migration process')
-        obj_map = self.data['neutron']
-        tasks = _create_task_list(obj_map)
+        tasks = self.data['neutron']['tasks']
         for t in tasks:
             if self.dry_run:
                 print(_dry_run_output(t))
