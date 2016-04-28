@@ -272,11 +272,13 @@ class DataWriter(object):
         for chain in chains:
             if self.dry_run:
                 print("api.add_chain()"
+                      ".id(" + chain['id'] + ")"
                       ".name(" + chain['name'] + ")"
                       ".tenant_id(" + chain['tenantId'] + ")"
                       ".create()")
             else:
                 return (self.mc.mn_api.add_chain()
+                        .id(chain['id'])
                         .name(chain['name'])
                         .tenant_id(chain['tenantId'])
                         .create())
@@ -285,6 +287,7 @@ class DataWriter(object):
         for bridge in bridges:
             if self.dry_run:
                 print("api.add_bridge()"
+                      ".id(" + bridge['id'] + ")"
                       ".name(" + bridge['name'] + ")"
                       ".tenant_id(" + bridge['tenantId'] + ")"
                       ".inbound_filter_id(" + bridge['inboundFilterId'] + ")"
@@ -293,6 +296,7 @@ class DataWriter(object):
                       ".create()")
             else:
                 return (self.mc.mn_api.add_bridge()
+                        .id(bridge['id'])
                         .name(bridge['name'])
                         .tenant_id(bridge['tenantId'])
                         .inbound_filter_id(bridge['inboundFilterId'])
@@ -304,6 +308,7 @@ class DataWriter(object):
         for router in routers:
             if self.dry_run:
                 print("api.add_router()"
+                      ".id(" + router['id'] + ")"
                       ".name(" + router['name'] + ")"
                       ".tenant_id(" + router['tenantId'] + ")"
                       ".inbound_filter_id(" + router['inboundFilterId'] + ")"
@@ -312,6 +317,7 @@ class DataWriter(object):
                       ".create()")
             else:
                 return (self.mc.mn_api.add_router()
+                        .id(router['id'])
                         .name(router['name'])
                         .tenant_id(router['tenantId'])
                         .inbound_filter_id(router['inboundFilterId'])
@@ -323,10 +329,12 @@ class DataWriter(object):
         for ip_addr_group in ip_addr_groups:
             if self.dry_run:
                 print("api.add_ip_addr_group()"
+                      ".id(" + ip_addr_group['id'] + ")"
                       ".name(" + ip_addr_group['name'] + ")"
                       ".create()")
             else:
                 return (self.mc.mn_api.add_ip_addr_group()
+                        .id(ip_addr_group['id'])
                         .name(ip_addr_group['name'])
                         .create())
 
@@ -334,12 +342,14 @@ class DataWriter(object):
         for tz in tzs:
             if self.dry_run:
                 print("api.add_tunnel_zone()"
+                      ".id(" + tz['id'] + ")"
                       ".type(" + tz['type'] + ")"
                       ".name(" + tz['name'] + ")"
                       ".create()")
             else:
                 try:
                     (self.mc.mn_api.add_tunnel_zone()
+                     .id(tz['id'])
                      .type(tz['type'])
                      .name(tz['name'])
                      .create())
@@ -354,7 +364,9 @@ class DataWriter(object):
 
         {
            "hosts": [{"id": <host_id>, "name": <host_name>}, ...],
-           "tunnel_zones": [{"type": <tz_type>, "name": <tz_name>, ...],
+           "tunnel_zones": [{"id": <tz_id>,
+                             "type": <tz_type>,
+                             "name": <tz_name>, ...],
            "host_bindings": [
                        {"host_id": {"name": <hostname>,
                         "ports": [{"id": <port_id>,
@@ -362,18 +374,23 @@ class DataWriter(object):
                         "tunnel_zones": [{"id": <tunnel_zone_id>,
                                           "ip_address": <ip_address>}, ...]
                        }, ...],
-           "chains": [{"name": <chain_name>, "tenantId": <tenant_id>}, ...],
-           "bridges": [{"name": <bridge_name>,
+           "chains": [{"id": <chain_id>,
+                       "name": <chain_name>,
+                       "tenantId": <tenant_id>}, ...],
+           "bridges": [{"id": <bridge_id>,
+                        "name": <bridge_name>,
                         "tenantId": <tenant_id>,
                         "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
                         "outboundFilterId": <outbound_chain_id>}, ...],
-           "routers": [{"name": <router_name>,
+           "routers": [{"id": <router_id>,
+                        "name": <router_name>,
                         "tenantId": <tenant_id>,
                         "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
                         "outboundFilterId": <outbound_chain_id>}, ...],
-            "ip_addr_groups": [{"name": <ip_addr_group_name>}, ...]
+            "ip_addr_groups": [{"id": <ip_addr_group_id>,
+                                "name": <ip_addr_group_name>}, ...]
         }
         """
         mido_data = self.data['midonet']
