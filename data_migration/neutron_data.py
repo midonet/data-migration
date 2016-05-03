@@ -126,7 +126,7 @@ def _task_router_routes(_topo, task_model, rid, router_obj):
     return None
 
 
-def _dry_run_output(t):
+def _print_task(t):
     return 'Task: ' + ', '.join([t['type'], t['data_type'], t['resource_id']])
 
 
@@ -245,13 +245,19 @@ class DataWriter(object):
         self.dry_run = dry_run
 
     def migrate(self):
-        LOG.info('Running migration process')
+        LOG.info('Running Neutron migration process')
         tasks = self.data['neutron']['tasks']
         for t in tasks:
-            if self.dry_run:
-                print(_dry_run_output(t))
-            else:
+            LOG.debug(_print_task(t))
+            if not self.dry_run:
                 task.create_task(self.mc.ctx, **t)
+
+    def _create_data(self, name, f, *args):
+        LOG.debug('create ' + name + ":" + map(str, args))
+        if self.dry_run:
+            return {"id": name}
+        else:
+            return f(self.mc.ctx, *args)
 
     def create_edge_router(self, tenant):
         """Create the edge router
@@ -275,6 +281,8 @@ class DataWriter(object):
 
         nets is a list of Neutron network objects.
         """
+        LOG.info('Running Edge Router migration process')
+
         provider_router = self.data['midonet']['provider_router']
         nets = self.data['neutron']['networks']
         ports = provider_router['ports']
@@ -283,12 +291,8 @@ class DataWriter(object):
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        if self.dry_run:
-            print('create_router: ' + str(router_obj))
-            upl_router = {'id': 'uplink_router_id'}
-        else:
-            upl_router = self.mc.client.create_router(self.mc.ctx, router_obj)
-            LOG.debug('Created router: ' + str(upl_router))
+        upl_router = self._create_data("router", self.mc.client.create_router,
+                                       router_obj)
 
         for port in ports:
             base_name = port['host'] + "_" + port['iface']
@@ -297,12 +301,8 @@ class DataWriter(object):
                                    'shared': False,
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
-            if self.dry_run:
-                print('create_network: ' + str(net_obj))
-                upl_net = {'id': 'uplink_net_id'}
-            else:
-                upl_net = self.mc.client.create_network(self.mc.ctx, net_obj)
-                LOG.debug('Created network: ' + str(upl_net))
+            upl_net = self._create_data("network",
+                                        self.mc.client.create_network, net_obj)
 
             subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
                                      'network_id': upl_net['id'],
@@ -314,12 +314,8 @@ class DataWriter(object):
                                      'enable_dhcp': False,
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
-            if self.dry_run:
-                print('create_subnet: ' + str(subnet_obj))
-                upl_sub = {'id': 'uplink_subnet_id'}
-            else:
-                upl_sub = self.mc.client.create_subnet(self.mc.ctx, subnet_obj)
-                LOG.debug('Created subnet: ' + str(upl_sub))
+            upl_sub = self._create_data("subnet", self.mc.client.create_subnet,
+                                        subnet_obj)
 
             port_obj = {'port': {'name': base_name + "_uplink_port",
                                  'tenant_id': 'admin',
@@ -334,28 +330,17 @@ class DataWriter(object):
                                  'binding:profile': {
                                      'interface_name': port['iface']},
                                  'admin_state_up': port['admin_state_up']}}
-            if self.dry_run:
-                print('create_port: ' + str(port_obj))
-                bound_port = {'id': 'uplink_port_id'}
-            else:
-                bound_port = self.mc.client.create_port(self.mc.ctx, port_obj)
-                LOG.debug('Created port: ' + str(bound_port))
+            bound_port = self._create_data("port", self.mc.client.create_port,
+                                           port_obj)
 
             iface_obj = {'port_id': bound_port['id']}
-            if self.dry_run:
-                print('add_router_interface: ' + str(iface_obj))
-            else:
-                iface = self.mc.client.add_router_interface(self.mc.ctx,
-                                                            upl_router['id'],
-                                                            iface_obj)
-                LOG.debug('Added interface: ' + str(iface))
+            self._create_data("router_interface",
+                              self.mc.client.add_router_interface,
+                              upl_router['id'], iface_obj)
 
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
-            if self.dry_run:
-                print('add_router_interface: ' + str(iface_obj))
-            else:
-                iface = self.mc.client.add_router_interface(
-                    self.mc.ctx, upl_router['id'], iface_obj)
-                LOG.debug('Added ext-net interface: ' + str(iface))
+            self._create_data("router_interface",
+                              self.mc.client.add_router_interface,
+                              upl_router['id'], iface_obj)

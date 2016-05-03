@@ -95,13 +95,13 @@ class DataReader(object):
             # This should not happen
             raise exc.UpgradeScriptException("Provider Router not found")
 
-        LOG.debug("[(MIDONET) Provider Router]: " + str(provider_router))
         return provider_router
 
     @property
     def provider_router(self):
         if self._provider_router is None:
             self._provider_router = self._get_provider_router()
+            LOG.debug("Provider Router: " + str(self._provider_router))
         return self._provider_router
 
     def _convert_to_host2tz_map(self, tzs):
@@ -230,132 +230,91 @@ class DataWriter(object):
         for hid, h in iter(bindings.items()):
             tzs = h["tunnel_zones"]
             for tz in tzs:
-                if self.dry_run:
-                    print("tz.add_tunnel_zone_host()"
-                          ".ip_address(" + tz['ip_address'] + ")"
-                          ".host_id(" + hid + ").create()")
-                else:
+                LOG.debug("Binding host tz: " + str(tz) + ", " + str(h))
+                if not self.dry_run:
                     tz = self.mc.mn_api.get_tunnel_zone(tz['id'])
                     (tz.add_tunnel_zone_host()
                      .ip_address(h['ip_address'])
                      .host_id(hid).create())
 
-            host = self.mc.mn_api.get_host(hid)
+            if self.dry_run:
+                host = {"id": "fake_host"}
+            else:
+                host = self.mc.mn_api.get_host(hid)
+
             ports = h["ports"]
             for p in ports:
-                if self.dry_run:
-                    print("api.add_host_interface_port(host, "
-                          "port_id=" + p["id"] +
-                          ", interface_name=" + p["interface"] + ")")
-                else:
+                LOG.debug("Binding port host intf: " + str(p) + ", " + host)
+                if not self.dry_run:
                     self.mc.mn_api.add_host_interface_port(
                         host, port_id=p["id"], interface_name=p["interface"])
 
+    def _create_data(self, name, f, obj):
+        LOG.debug("Create " + name + ": " + str(obj))
+        if not self.dry_run:
+            try:
+                f()
+            except wexc.HTTPClientError as e:
+                if e.code == wexc.HTTPConflict.code:
+                    LOG.warn(name + " already exists: " + obj['id'])
+
     def _create_hosts(self, hosts):
         for h in hosts:
-            if self.dry_run:
-                print("api.add_host()"
-                      ".id(" + h['id'] + ")"
-                      ".name(" + h['name'] + ")"
-                      ".create()")
-            else:
-                try:
-                    (self.mc.mn_api.add_host()
-                     .id(h['id'])
-                     .name(h['name'])
-                     .create())
-                except wexc.HTTPClientError as e:
-                    if e.code == wexc.HTTPConflict.code:
-                        LOG.warn('Host already exists: ' + h['id'])
+            f = (self.mc.mn_api.add_host()
+                               .id(h['id'])
+                               .name(h['name'])
+                               .create)
+            self._create_data("host", f, h)
 
     def _create_chains(self, chains):
         for chain in chains:
-            if self.dry_run:
-                print("api.add_chain()"
-                      ".id(" + chain['id'] + ")"
-                      ".name(" + chain['name'] + ")"
-                      ".tenant_id(" + chain['tenantId'] + ")"
-                      ".create()")
-            else:
-                return (self.mc.mn_api.add_chain()
+            f = (self.mc.mn_api.add_chain()
                         .id(chain['id'])
                         .name(chain['name'])
                         .tenant_id(chain['tenantId'])
-                        .create())
+                        .create)
+            self._create_data("chain", f, chain)
 
     def _create_bridges(self, bridges):
         for bridge in bridges:
-            if self.dry_run:
-                print("api.add_bridge()"
-                      ".id(" + bridge['id'] + ")"
-                      ".name(" + bridge['name'] + ")"
-                      ".tenant_id(" + bridge['tenantId'] + ")"
-                      ".inbound_filter_id(" + bridge['inboundFilterId'] + ")"
-                      ".outbound_filter_id(" + bridge['outboundFilterId'] + ")"
-                      ".admin_state_up(" + bridge['adminStateUp'] + ")"
-                      ".create()")
-            else:
-                return (self.mc.mn_api.add_bridge()
+            f = (self.mc.mn_api.add_bridge()
                         .id(bridge['id'])
                         .name(bridge['name'])
                         .tenant_id(bridge['tenantId'])
                         .inbound_filter_id(bridge['inboundFilterId'])
                         .outbound_filter_id(bridge['outboundFilterId'])
                         .admin_state_up(bridge['adminStateUp'])
-                        .create())
+                        .create)
+            self._create_data("bridge", f, bridge)
 
     def _create_routers(self, routers):
         for router in routers:
-            if self.dry_run:
-                print("api.add_router()"
-                      ".id(" + router['id'] + ")"
-                      ".name(" + router['name'] + ")"
-                      ".tenant_id(" + router['tenantId'] + ")"
-                      ".inbound_filter_id(" + router['inboundFilterId'] + ")"
-                      ".outbound_filter_id(" + router['outboundFilterId'] + ")"
-                      ".admin_state_up(" + router['adminStateUp'] + ")"
-                      ".create()")
-            else:
-                return (self.mc.mn_api.add_router()
+            f = (self.mc.mn_api.add_router()
                         .id(router['id'])
                         .name(router['name'])
                         .tenant_id(router['tenantId'])
                         .inbound_filter_id(router['inboundFilterId'])
                         .outbound_filter_id(router['outboundFilterId'])
                         .admin_state_up(router['adminStateUp'])
-                        .create())
+                        .create)
+            self._create_data("router", f, router)
 
     def _create_ip_addr_groups(self, ip_addr_groups):
         for ip_addr_group in ip_addr_groups:
-            if self.dry_run:
-                print("api.add_ip_addr_group()"
-                      ".id(" + ip_addr_group['id'] + ")"
-                      ".name(" + ip_addr_group['name'] + ")"
-                      ".create()")
-            else:
-                return (self.mc.mn_api.add_ip_addr_group()
+            f = (self.mc.mn_api.add_ip_addr_group()
                         .id(ip_addr_group['id'])
                         .name(ip_addr_group['name'])
-                        .create())
+                        .create)
+            self._create_data("ip address group", f, ip_addr_group)
 
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
-            if self.dry_run:
-                print("api.add_tunnel_zone()"
-                      ".id(" + tz['id'] + ")"
-                      ".type(" + tz['type'] + ")"
-                      ".name(" + tz['name'] + ")"
-                      ".create()")
-            else:
-                try:
-                    (self.mc.mn_api.add_tunnel_zone()
+            f = (self.mc.mn_api.add_tunnel_zone()
                      .id(tz['id'])
                      .type(tz['type'])
                      .name(tz['name'])
-                     .create())
-                except wexc.HTTPClientError as e:
-                    if e.code == wexc.HTTPConflict.code:
-                        LOG.warn('Tunnel zone already exists: ' + tz['name'])
+                     .create)
+            self._create_data("tunnel zone", f, tz)
 
     def create_objects(self):
         """Create all the midonet objects
@@ -393,6 +352,7 @@ class DataWriter(object):
                                 "name": <ip_addr_group_name>}, ...]
         }
         """
+        LOG.info('Running MidoNet migration process')
         mido_data = self.data['midonet']
         self._create_hosts(mido_data['hosts'])
         self._create_tunnel_zones(mido_data["tunnel_zones"])
