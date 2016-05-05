@@ -72,11 +72,11 @@ class DataReader(object):
         self._provider_router = None
         self._nd = nd
 
-    def _get_objects_by_path(self, path, ids_exlude=None, filter_func=None):
+    def _get_objects_by_path(self, path, exclude=None, filter_func=None):
         objs = self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
 
-        if ids_exlude:
-            objs = [o for o in objs if o['id'] not in ids_exlude]
+        if exclude:
+            objs = [o for o in objs if o['id'] not in exclude]
 
         if filter_func:
             objs = filter_func(objs)
@@ -195,13 +195,13 @@ class DataReader(object):
 
     def prepare(self):
         bridges = self._get_objects_by_path(
-            "bridges", ids_exlude=self._neutron_ids('networks'))
+            "bridges", exclude=self._neutron_ids('networks'))
         chains = self._get_objects_by_path("chains",
                                            filter_func=_chain_filter)
         routers = self._get_objects_by_path(
-            "routers", ids_exlude=self._router_exclude_ids())
+            "routers", exclude=self._router_exclude_ids())
         ip_addr_groups = self._get_objects_by_path(
-            "ip_addr_groups", ids_exlude=self._neutron_ids("security-groups"))
+            "ip_addr_groups", exclude=self._neutron_ids("security-groups"))
 
         tzs = self._get_objects_by_path('tunnel_zones')
         hosts = self._get_objects_by_path('hosts')
