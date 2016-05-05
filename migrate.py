@@ -16,12 +16,11 @@
 
 from __future__ import print_function
 import argparse
-from data_migration import config
-from data_migration import constants as const
 from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
 import json
 import logging
+from oslo_config import cfg
 import sys
 
 LOG = logging.getLogger(name="data_migration")
@@ -53,18 +52,15 @@ def main():
                              'taken')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
                         help='Turn on debug logging (off by default)')
-    parser.add_argument('-c', '--neutron_conf', action='store',
-                        default=const.NEUTRON_CONF_FILE,
-                        help='Neutron configuration file')
-    parser.add_argument('-p', '--plugin_conf', action='store',
-                        default=const.MIDONET_PLUGIN_CONF_FILE,
-                        help='MidoNet plugin configuration file')
+    parser.add_argument('-c', '--conf', action='store',
+                        default="./migration.conf",
+                        help='Migration configuration file')
     parser.add_argument('-t', '--tenant', action='store', default=None,
                         help='Tenant name to use for the edge router')
     args = parser.parse_args()
 
     # Initialize configs
-    config.register([args.neutron_conf, args.plugin_conf])
+    cfg.CONF(args=[], project='neutron', default_config_files=[args.conf])
     dry_run = args.dryrun
 
     # For now, just allow DEBUG or INFO

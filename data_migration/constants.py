@@ -16,6 +16,4 @@
 EXT_RTR_PORT_TYPE = "ExteriorRouter"
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
-MIDONET_PLUGIN_CONF_FILE = '/etc/neutron/plugins/midonet/midonet.ini'
-NEUTRON_CONF_FILE = '/etc/neutron/neutron.conf'
 PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'

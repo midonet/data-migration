@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from data_migration import config  # noqa
 from midonetclient import api
 from midonetclient.client import httpclient
 from neutron.common import rpc
