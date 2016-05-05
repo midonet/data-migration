@@ -29,8 +29,6 @@ def _get_neutron_objects(key, func, context, filter_list=None):
     retmap = {key: {}}
     submap = retmap[key]
 
-    LOG.debug("\n[" + key + "]")
-
     filters = {}
     for f in filter_list:
         new_filter = f.func_filter()
@@ -46,10 +44,6 @@ def _get_neutron_objects(key, func, context, filter_list=None):
         if 'id' not in obj:
             raise exc.UpgradeScriptException(
                 'Trying to parse an object with no ID field: ' + str(obj))
-
-        singular_noun = key[:-1] if key.endswith('s') else key
-        LOG.debug("\t[" + singular_noun + " " + obj['id'] + "]: " + str(obj))
-
         submap[obj['id']] = obj
 
     return retmap
