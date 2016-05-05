@@ -13,8 +13,7 @@ How to Run
 ``migrate.py`` command is defined as follows::
 
      $ ./migrate_py [-h|--help] [-d|--debug] [-n|--dryrun]
-                    [-c|--neutron_conf <neutron_conf_file>]
-                    [-p|--plugin_conf <plugin_conf_file>]
+                    [-c|--conf <conf_file>]
                     <command>
 Options::
 
@@ -28,13 +27,9 @@ Options::
          Run the command but only print out actions that would be taken
          normally, without actually committing the data.
 
-     -c,--neutron_conf <conf_file>
-         Use the specified Neutron configuration file instead of the default,
-         '/etc/neutron/neutron.conf'.
-
-     -p,--plugin_conf <conf_file>
-         Use the specified MidoNet plugin configuration file instead of the
-         default, '/etc/neutron/plugins/midonet/midonet.ini'.
+     -c,--conf <conf_file>
+         Use the specified configuration file for data migration.  If not
+         specified, it looks for './migration.conf'.
 
 Commands::
 

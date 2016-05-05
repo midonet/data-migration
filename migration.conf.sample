@@ -1,0 +1,22 @@
+[DEFAULT]
+# Uncomment the line below if you want to use plugin_v1 (v1.9)
+#
+# core_plugin = midonet.neutron.plugin_v1.MidonetPluginV2
+
+# Uncomment the line below if you want to use plugin_v2 (v5.X)
+#
+# core_plugin = midonet.neutron.plugin_v2.MidonetPluginV2
+
+[database]
+# Database conneciton string
+#
+# connection = mysql+pymysql://root:midonet@127.0.0.1/neutron?charset=utf8
+
+[MIDONET]
+# The following section contains the configurations for midonet plugin
+#
+# client = midonet.neutron.client.api.MidonetApiClient
+# project_id = service
+# password = midonet
+# username = neutron
+# midonet_uri = http://127.0.0.1:8181/midonet-api
