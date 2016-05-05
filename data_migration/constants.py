@@ -13,7 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-EXT_RTR_PORT_TYPE = "ExteriorRouter"
+RTR_PORT_TYPE = "Router"
+BRG_PORT_TYPE = "Bridge"
+
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
 PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'

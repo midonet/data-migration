@@ -28,9 +28,7 @@ def _is_lb_hm_interface(name):
 
 
 def _port_is_bound(p):
-    return (p.get_type() == const.EXT_RTR_PORT_TYPE and
-            (p.get_interface_name() is not None and
-             p.get_host_id() is not None))
+    return p.get_interface_name() is not None and p.get_host_id() is not None
 
 
 def _cidr_from_port(p):
@@ -81,6 +79,12 @@ def _convert_to_host2tz_map(tzs):
     return host2tz
 
 
+def _is_neutron_port(port, n_ports):
+    peer_id = port.get_peer_id()
+    return port.get_id() in n_ports or (peer_id is not None and
+                                        peer_id in n_ports)
+
+
 def _get_objects(f, exclude=None, filter_func=None):
     objs = f()
     if exclude:
@@ -90,6 +94,15 @@ def _get_objects(f, exclude=None, filter_func=None):
         objs = filter_func(objs)
 
     return objs
+
+
+def _get_obj(f, obj_id, cache_map=None):
+    if cache_map is None:
+        cache_map = {}
+    obj = cache_map.get(obj_id)
+    if not obj:
+        obj = f(obj_id)
+    return obj
 
 
 def _to_dto_dict(objs):
@@ -121,6 +134,18 @@ class DataReader(object):
             self._provider_router = self._get_provider_router()
             LOG.debug("Provider Router: " + str(self._provider_router))
         return self._provider_router
+
+    def _port_filter(self, ports):
+        """We want to exclude the following ports:
+
+        1. ID matching one of the neutron port IDs
+        2. Peer ID, if present, matching one of Neutron port IDs
+        3. Provider router ports
+        """
+        n_ports = self._neutron_ids("ports")
+        pr_id = self._provider_router.get_id()
+        return [p for p in ports if (p.get_device_id() != pr_id
+                                     and not _is_neutron_port(p, n_ports))]
 
     def _get_host_ports(self, host, pr_id):
         port_list = []
@@ -198,6 +223,8 @@ class DataReader(object):
                               filter_func=_chain_filter)
         routers = _get_objects(self.mc.mn_api.get_routers,
                                exclude=self._router_exclude_ids())
+        ports = _get_objects(self.mc.mn_api.get_ports,
+                             filter_func=self._port_filter)
         ip_addr_groups = _get_objects(
             self.mc.mn_api.get_ip_addr_groups,
             exclude=self._neutron_ids("security-groups"))
@@ -213,6 +240,7 @@ class DataReader(object):
             "chains": _to_dto_dict(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
             "tunnel_zones": _to_dto_dict(tzs),
+            "ports": _to_dto_dict(ports),
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
         }
@@ -253,7 +281,7 @@ class DataWriter(object):
         LOG.debug("Create " + name + ": " + str(obj))
         if not self.dry_run:
             try:
-                f()
+                return f()
             except wexc.HTTPClientError as e:
                 if e.code == wexc.HTTPConflict.code:
                     LOG.warn(name + " already exists: " + obj['id'])
@@ -276,6 +304,7 @@ class DataWriter(object):
             self._create_data("chain", f, chain)
 
     def _create_bridges(self, bridges):
+        results = {}
         for bridge in bridges:
             f = (self.mc.mn_api.add_bridge()
                         .id(bridge['id'])
@@ -285,9 +314,11 @@ class DataWriter(object):
                         .outbound_filter_id(bridge['outboundFilterId'])
                         .admin_state_up(bridge['adminStateUp'])
                         .create)
-            self._create_data("bridge", f, bridge)
+            results[bridge['id']] = self._create_data("bridge", f, bridge)
+        return results
 
     def _create_routers(self, routers):
+        results = {}
         for router in routers:
             f = (self.mc.mn_api.add_router()
                         .id(router['id'])
@@ -297,7 +328,48 @@ class DataWriter(object):
                         .outbound_filter_id(router['outboundFilterId'])
                         .admin_state_up(router['adminStateUp'])
                         .create)
-            self._create_data("router", f, router)
+            results[router['id']] = self._create_data("router", f, router)
+        return results
+
+    def _create_ports(self, ports, bridges, routers):
+        results = {}
+        for port in ports:
+            ptype = port['type']
+            device_id = port['deviceId']
+            pid = port['id']
+            if ptype == const.BRG_PORT_TYPE:
+                bridge = _get_obj(self.mc.mn_api.get_bridge, device_id,
+                                  cache_map=bridges)
+                f = (self.mc.mn_api.add_bridge_port(bridge)
+                         .id(pid)
+                         .type(ptype)
+                         .admin_state_up(port['adminStateUp'])
+                         .inbound_filter_id(port['inboundFilterId'])
+                         .outbound_filter_id(port['outboundFilterId'])
+                         .vif_id(port['vifId'])
+                         .vlan_id(port['vlanId'])
+                         .create)
+            elif ptype == const.RTR_PORT_TYPE:
+                router = _get_obj(self.mc.mn_api.get_router, device_id,
+                                  cache_map=routers)
+                f = (self.mc.mn_api.add_router_port(router)
+                         .id(pid)
+                         .type(ptype)
+                         .admin_state_up(port['adminStateUp'])
+                         .inbound_filter_id(port['inboundFilterId'])
+                         .outbound_filter_id(port['outboundFilterId'])
+                         .port_address(port['portAddress'])
+                         .network_address(port['networkAddress'])
+                         .network_length(port['networkLength'])
+                         .port_mac(port['portMac'])
+                         .create)
+            else:
+                LOG.warn("Unknown port type " + ptype + " detected for port " +
+                         pid)
+                continue
+
+            results[pid] = self._create_data("port", f, port)
+        return results
 
     def _create_ip_addr_groups(self, ip_addr_groups):
         for ip_addr_group in ip_addr_groups:
@@ -348,6 +420,18 @@ class DataWriter(object):
                         "adminStateUp": <admin_state_up>,
                         "inboundFilterId": <inbound_chain_id>,
                         "outboundFilterId": <outbound_chain_id>}, ...],
+            "ports": [{"id": <port_id>,
+                       "deviceId": <device_id>,
+                       "adminStateUp": <admin_state_up>,
+                       "inboundFilterId": <chain_id>,
+                       "outboundFilterId": <chain_id>,
+                       "vifId": <vif_id>,
+                       "vlanId": <vlan_id>,
+                       "portAddress": <port_address>,
+                       "networkAddress": <network_address>,
+                       "networkLength": <network_length>,
+                       "portMac": <port_mac>,
+                       "type": <type>}, ...],
             "ip_addr_groups": [{"id": <ip_addr_group_id>,
                                 "name": <ip_addr_group_name>}, ...]
         }
@@ -357,7 +441,8 @@ class DataWriter(object):
         self._create_hosts(mido_data['hosts'])
         self._create_tunnel_zones(mido_data["tunnel_zones"])
         self._create_chains(mido_data['chains'])
-        self._create_bridges(mido_data['bridges'])
-        self._create_routers(mido_data['routers'])
+        bridges = self._create_bridges(mido_data['bridges'])
+        routers = self._create_routers(mido_data['routers'])
         self._create_ip_addr_groups(mido_data['ip_addr_groups'])
+        self._create_ports(mido_data['ports'], bridges, routers)
         self._bind_hosts(mido_data['host_bindings'])
