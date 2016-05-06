@@ -17,3 +17,7 @@ EXT_RTR_PORT_TYPE = "ExteriorRouter"
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
 PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'
+
+LEGACY_PLUGIN = "neutron.plugins.midonet.plugin.MidonetPluginV2"
+V1_PLUGIN = "midonet.neutron.plugin_v1.MidonetPluginV2"
+V2_PLUGIN = "midonet.neutron.plugin_v2.MidonetPluginV2"

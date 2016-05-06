@@ -176,7 +176,7 @@ _CREATES = [
 class DataReader(object):
 
     def __init__(self):
-        self.mc = ctx.get_context()
+        self.mc = ctx.get_read_context()
 
     def _get_subnet_router(self, context, filters=None):
         new_list = []
@@ -240,7 +240,7 @@ class DataReader(object):
 class DataWriter(object):
 
     def __init__(self, data, dry_run=False):
-        self.mc = ctx.get_context()
+        self.mc = ctx.get_write_context()
         self.data = data
         self.dry_run = dry_run
 
