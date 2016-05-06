@@ -28,19 +28,21 @@ def _is_lb_hm_interface(name):
 
 
 def _port_is_bound(p):
-    return p['type'] == const.EXT_RTR_PORT_TYPE and p['hostInterfacePort']
+    return (p.get_type() == const.EXT_RTR_PORT_TYPE and
+            (p.get_interface_name() is not None and
+             p.get_host_id() is not None))
 
 
 def _cidr_from_port(p):
-    return p['networkAddress'] + "/" + str(p['networkLength'])
+    return p.get_network_address() + "/" + str(p.get_network_length())
 
 
 def _make_provider_router_port_dict(p, host, ifname):
     return {
-        'admin_state_up': p['adminStateUp'],
+        'admin_state_up': p.get_admin_state_up(),
         'network_cidr': _cidr_from_port(p),
-        'mac': p['portMac'],
-        'ip_address': p['portAddress'],
+        'mac': p.get_port_mac(),
+        'ip_address': p.get_port_address(),
         'host': host,
         'iface': ifname
     }
@@ -49,12 +51,12 @@ def _make_provider_router_port_dict(p, host, ifname):
 def _convert_to_host_id_to_name_map(hosts):
     h_map = {}
     for h in hosts:
-        h_map[h['id']] = h['name']
+        h_map[h.get_id()] = h.get_name()
     return h_map
 
 
 def _is_neutron_chain(chain):
-    name = chain['name']
+    name = chain.get_name()
     return (name.startswith("OS_PRE_ROUTING_") or
             name.startswith("OS_POST_ROUTING_") or
             name.startswith("OS_PORT_") or
@@ -65,6 +67,35 @@ def _chain_filter(chains):
     return [c for c in chains if not _is_neutron_chain(c)]
 
 
+def _convert_to_host2tz_map(tzs):
+    host2tz = {}
+    for tz in tzs:
+        tzhs = tz.get_hosts()
+        for tzh in tzhs:
+            hid = tzh.get_host_id()
+            if hid not in host2tz:
+                host2tz[hid] = []
+            host2tz[hid].append(
+                {"id": tzh.get_tunnel_zone_id(),
+                 "ip_address": tzh.get_ip_address()})
+    return host2tz
+
+
+def _get_objects(f, exclude=None, filter_func=None):
+    objs = f()
+    if exclude:
+        objs = [o for o in objs if o.get_id() not in exclude]
+
+    if filter_func:
+        objs = filter_func(objs)
+
+    return objs
+
+
+def _to_dto_dict(objs):
+    return [o.dto for o in objs]
+
+
 class DataReader(object):
 
     def __init__(self, nd):
@@ -72,25 +103,12 @@ class DataReader(object):
         self._provider_router = None
         self._nd = nd
 
-    def _get_objects_by_path(self, path, exclude=None, filter_func=None):
-        objs = self._get_objects_by_url(self.mc.mn_url + '/' + path + '/')
-
-        if exclude:
-            objs = [o for o in objs if o['id'] not in exclude]
-
-        if filter_func:
-            objs = filter_func(objs)
-
-        return objs
-
-    def _get_objects_by_url(self, url):
-        return self.mc.mn_client.get(uri=url, media_type="*/*")
-
     def _get_provider_router(self):
-        routers = self._get_objects_by_path('routers')
+        routers = _get_objects(self.mc.mn_api.get_routers)
         try:
-            provider_router = next(r for r in routers
-                                   if r['name'] == const.PROVIDER_ROUTER_NAME)
+            provider_router = next(
+                r for r in routers
+                if r.get_name() == const.PROVIDER_ROUTER_NAME)
         except StopIteration:
             # This should not happen
             raise exc.UpgradeScriptException("Provider Router not found")
@@ -104,34 +122,19 @@ class DataReader(object):
             LOG.debug("Provider Router: " + str(self._provider_router))
         return self._provider_router
 
-    def _convert_to_host2tz_map(self, tzs):
-        host2tz = {}
-        for tz in tzs:
-            tz_id = tz['id']
-            tzhs = self._get_objects_by_path('tunnel_zones/' + tz_id +
-                                             "/hosts")
-            for tzh in tzhs:
-                hid = tzh['hostId']
-                if hid not in host2tz:
-                    host2tz[hid] = []
-                host2tz[hid].append(
-                    {"id": tzh["tunnelZoneId"],
-                     "ip_address": tzh["ipAddress"]})
-        return host2tz
-
-    def _get_host_ports(self, host_id, pr_id):
+    def _get_host_ports(self, host, pr_id):
         port_list = []
-        ports = self._get_objects_by_path('hosts/' + host_id + "/ports")
+        ports = host.get_ports()
 
         # Skip ports for health monitors
         for port in [p for p in ports
-                     if not _is_lb_hm_interface(p['interfaceName'])]:
-            port_obj = self._get_objects_by_url(port['port'])
+                     if not _is_lb_hm_interface(p.get_interface_name())]:
+            port_obj = self.mc.mn_api.get_port(port.get_port_id())
 
             # Skip port bindings for external routers (provider router)
-            if port_obj['deviceId'] != pr_id:
-                port_list.append({"id": port_obj["id"],
-                                  "interface": port['interfaceName']})
+            if port_obj.get_device_id() != pr_id:
+                port_list.append({"id": port_obj.get_id(),
+                                  "interface": port.get_interface_name()})
         return port_list
 
     def _prepare_host_bindings(self, hosts, host2tz_map):
@@ -144,20 +147,14 @@ class DataReader(object):
         bindings_map = {}
         pr = self.provider_router
         for h in hosts:
-            hid = h['id']
+            hid = h.get_id()
             bindings_map[hid] = {
-                "name": h['name'],
+                "name": h.get_name(),
                 "tunnel_zones": host2tz_map[hid],
-                "ports": self._get_host_ports(hid, pr['id'])
+                "ports": self._get_host_ports(h, pr.get_id())
             }
 
         return bindings_map
-
-    def _get_port_with_host_intf_dict(self, p, host_id2name_map):
-        hip = self._get_objects_by_url(p['hostInterfacePort'])
-        h_name = host_id2name_map[hip['hostId']]
-        return _make_provider_router_port_dict(p, h_name,
-                                               hip['interfaceName'])
 
     def _prepare_provider_router(self, host_id2name_map):
         """Prepares the data required for provider router migration
@@ -170,19 +167,20 @@ class DataReader(object):
         Neutron expects.
         """
         ports = []
-        pr_id = self.provider_router['id']
-        pr_ports = self._get_objects_by_path('routers/' + pr_id + '/ports')
+        pr_ports = self.provider_router.get_ports()
         for p in pr_ports:
             if _port_is_bound(p):
-                port = self._get_port_with_host_intf_dict(p, host_id2name_map)
+                h_name = host_id2name_map[p.get_host_id()]
+                port = _make_provider_router_port_dict(p, h_name,
+                                                       p.get_interface_name())
                 ports.append(port)
 
         return {
             'router': {
-                'name': self.provider_router['name'],
-                'admin_state_up': self.provider_router['adminStateUp']
+                'name': self.provider_router.get_name(),
+                'admin_state_up': self.provider_router.get_admin_state_up()
             },
-            'ports': ports
+            'ports': _to_dto_dict(ports)
         }
 
     def _neutron_ids(self, key):
@@ -190,30 +188,31 @@ class DataReader(object):
 
     def _router_exclude_ids(self):
         ids = self._neutron_ids('routers')
-        ids.add(self.provider_router['id'])
+        ids.add(self.provider_router.get_id())
         return ids
 
     def prepare(self):
-        bridges = self._get_objects_by_path(
-            "bridges", exclude=self._neutron_ids('networks'))
-        chains = self._get_objects_by_path("chains",
-                                           filter_func=_chain_filter)
-        routers = self._get_objects_by_path(
-            "routers", exclude=self._router_exclude_ids())
-        ip_addr_groups = self._get_objects_by_path(
-            "ip_addr_groups", exclude=self._neutron_ids("security-groups"))
+        bridges = _get_objects(self.mc.mn_api.get_bridges,
+                               exclude=self._neutron_ids('networks'))
+        chains = _get_objects(self.mc.mn_api.get_chains,
+                              filter_func=_chain_filter)
+        routers = _get_objects(self.mc.mn_api.get_routers,
+                               exclude=self._router_exclude_ids())
+        ip_addr_groups = _get_objects(
+            self.mc.mn_api.get_ip_addr_groups,
+            exclude=self._neutron_ids("security-groups"))
 
-        tzs = self._get_objects_by_path('tunnel_zones')
-        hosts = self._get_objects_by_path('hosts')
-        host2tz_map = self._convert_to_host2tz_map(tzs)
+        tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
+        hosts = _get_objects(self.mc.mn_api.get_hosts)
+        host2tz_map = _convert_to_host2tz_map(tzs)
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
-            "hosts": hosts,
-            "bridges": bridges,
-            "routers": routers,
-            "chains": chains,
-            "ip_addr_groups": ip_addr_groups,
-            "tunnel_zones": tzs,
+            "hosts": _to_dto_dict(hosts),
+            "bridges": _to_dto_dict(bridges),
+            "routers": _to_dto_dict(routers),
+            "chains": _to_dto_dict(chains),
+            "ip_addr_groups": _to_dto_dict(ip_addr_groups),
+            "tunnel_zones": _to_dto_dict(tzs),
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
         }

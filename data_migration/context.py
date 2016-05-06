@@ -14,7 +14,6 @@
 #    under the License.
 
 from midonetclient import api
-from midonetclient.client import httpclient
 from neutron.common import rpc
 from neutron import context as ncntxt
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
@@ -38,10 +37,6 @@ class MigrationContext(object):
         self.client = importutils.import_object(neutron_config.core_plugin)
         mn_config = neutron_config.MIDONET
         self.mn_url = mn_config.midonet_uri
-        self.mn_client = httpclient.HttpClient(mn_config.midonet_uri,
-                                               mn_config.username,
-                                               mn_config.password,
-                                               project_id=mn_config.project_id)
         self.mn_api = api.MidonetApi(mn_config.midonet_uri,
                                      mn_config.username,
                                      mn_config.password,
