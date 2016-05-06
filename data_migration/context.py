@@ -15,6 +15,7 @@
 
 from data_migration import constants as cnst
 from midonetclient import api
+from neutron.common import config as n_config  # noqa
 from neutron.common import rpc
 from neutron import context as ncntxt
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
