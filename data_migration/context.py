@@ -31,11 +31,11 @@ class MigrationContext(object):
         # Required to bypass an error when instantiating Midonet plugin.
         rpc.init(cfg.CONF)
 
-        neutron_config = cfg.CONF
+        config = cfg.CONF
 
         # Load the plugin dynamically
-        self.client = importutils.import_object(neutron_config.core_plugin)
-        mn_config = neutron_config.MIDONET
+        self.client = importutils.import_object(config.core_plugin)
+        mn_config = config.MIDONET
         self.mn_url = mn_config.midonet_uri
         self.mn_api = api.MidonetApi(mn_config.midonet_uri,
                                      mn_config.username,
