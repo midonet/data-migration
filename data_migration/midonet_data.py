@@ -180,7 +180,7 @@ class DataReader(object):
                 'name': self.provider_router.get_name(),
                 'admin_state_up': self.provider_router.get_admin_state_up()
             },
-            'ports': _to_dto_dict(ports)
+            'ports': ports
         }
 
     def _neutron_ids(self, key):
