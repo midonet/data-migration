@@ -40,11 +40,11 @@ def _import_plugin(clazz_path):
 class MigrationContext(object):
 
     def __init__(self):
-        config = cfg.CONF.MIDONET
-        self.mn_api = api.MidonetApi(config.midonet_uri,
-                                     config.username,
-                                     config.password,
-                                     project_id=config.project_id)
+        self.config = cfg.CONF.MIDONET
+        self.mn_api = api.MidonetApi(self.config.midonet_uri,
+                                     self.config.username,
+                                     self.config.password,
+                                     project_id=self.config.project_id)
         self.n_ctx = ncntxt.get_admin_context()
 
 
@@ -68,6 +68,8 @@ class MigrationWriteContext(MigrationContext):
         # Only v2 plugin should be loaded
         self.plugin = _import_plugin(cnst.V2_PLUGIN)
         super(MigrationWriteContext, self).__init__()
+        self.client = importutils.import_object(self.config.client,
+                                                self.config)
 
 
 def get_read_context():

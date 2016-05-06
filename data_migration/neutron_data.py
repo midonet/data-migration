@@ -13,11 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import abc
+from data_migration import constants as const
 from data_migration import context as ctx
 from data_migration import exceptions as exc
 from data_migration import utils
 import logging
-import midonet.neutron.db.task_db as task
+import six
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -49,39 +51,31 @@ def _get_neutron_objects(key, func, context, filter_list=None):
     return retmap
 
 
-def _task_create_by_id(_topo, task_model, oid, obj):
-    LOG.debug("Preparing " + task_model + ": " + str(oid))
-    return {'type': "CREATE",
-            'data_type': task_model,
-            'resource_id': oid,
-            'data': obj}
+def _create_op_dict(_topo, res_type, obj):
+    LOG.debug("Op: " + res_type + " -> " + str(obj))
+    return {"type": res_type, "data": obj}
 
 
-def _task_lb(topo, task_model, pid, lb_obj):
+def _create_lb_op_dict(topo, res_type, lb_obj):
     lb_subnet = lb_obj['subnet_id']
-    router_id = topo['subnet-gateways'][lb_subnet]['gw_router_id']
+    router_id = topo[const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
     if not router_id:
         raise exc.UpgradeScriptException(
             "LB Pool's subnet has no associated gateway router: " + lb_obj)
-    LOG.debug("Preparing " + task_model + ": " + str(pid) +
-              " on router " + router_id)
+
     new_lb_obj = lb_obj.copy()
     new_lb_obj['health_monitors'] = []
     new_lb_obj['health_monitors_status'] = []
     new_lb_obj['members'] = []
     new_lb_obj['vip_id'] = None
     new_lb_obj['router_id'] = router_id
-    return {'type': task.CREATE,
-            'data_type': task_model,
-            'resource_id': pid,
-            'data': new_lb_obj}
+    return _create_op_dict(topo, res_type, new_lb_obj)
 
 
-def _task_router_interface(topo, task_model, pid, port):
-    router_obj = topo['routers'][port['device_id']]
+def _create_router_interface_op_dict(topo, res_type, port):
+    pid = port['id']
+    router_obj = topo[const.NEUTRON_ROUTERS][port['device_id']]
     router_id = router_obj['id']
-    LOG.debug("Preparing " + task_model + " on ROUTER: " + str(pid) +
-              " on router: " + router_id)
     if 'fixed_ips' not in port:
         raise exc.UpgradeScriptException(
             'Router interface port has no fixed IPs:' + str(port))
@@ -89,25 +83,22 @@ def _task_router_interface(topo, task_model, pid, port):
     interface_dict = {'id': router_id,
                       'port_id': pid,
                       'subnet_id': subnet_id}
-    return {'type': task.CREATE,
-            'data_type': task_model,
-            'resource_id': router_id,
-            'data': interface_dict}
+    return _create_op_dict(topo, res_type, interface_dict)
 
 
-def _print_task(t):
-    return 'Task: ' + ', '.join([t['type'], t['data_type'], t['resource_id']])
+def _print_op(t):
+    return 'Op: ' + ', '.join([t['type'], str(t['data'])])
 
 
-def _create_task_list(obj_map):
-    """Creates a list of tasks to run given a map of object ID -> object"""
-    task_list = []
-    for key, model, func in _CREATES:
-        for oid, obj in iter(obj_map[key].items()):
-            elem = func(obj_map, model, oid, obj)
+def _create_op_list(obj_map):
+    """Creates a list of ops to run given a map of object ID -> object"""
+    op_list = []
+    for res_type, func in _OPS:
+        for oid, obj in iter(obj_map[res_type].items()):
+            elem = func(obj_map, res_type, obj)
             if elem:
-                task_list.append(elem)
-    return task_list
+                op_list.append(elem)
+    return op_list
 
 
 def _router_has_gateway(r):
@@ -126,19 +117,118 @@ def _get_external_subnet_ids(nets):
     return subnet_ids
 
 
-_CREATES = [
-    ('security-groups', task.SECURITY_GROUP, _task_create_by_id),
-    ('networks', task.NETWORK, _task_create_by_id),
-    ('subnets', task.SUBNET, _task_create_by_id),
-    ('ports', task.PORT, _task_create_by_id),
-    ('routers', task.ROUTER, _task_create_by_id),
-    ('router-interfaces', "ROUTERINTERFACE", _task_router_interface),
-    ('floating-ips', task.FLOATING_IP, _task_create_by_id),
-    ('load-balancer-pools', task.POOL, _task_lb),
-    ('members', task.MEMBER, _task_create_by_id),
-    ('vips', task.VIP, _task_create_by_id),
-    ('health-monitors', task.HEALTH_MONITOR, _task_create_by_id)
+_OPS = [
+    (const.NEUTRON_SECURITY_GROUPS, _create_op_dict),
+    (const.NEUTRON_NETWORKS, _create_op_dict),
+    (const.NEUTRON_SUBNETS, _create_op_dict),
+    (const.NEUTRON_PORTS, _create_op_dict),
+    (const.NEUTRON_ROUTERS, _create_op_dict),
+    (const.NEUTRON_ROUTER_INTERFACES, _create_router_interface_op_dict),
+    (const.NEUTRON_FLOATINGIPS, _create_op_dict),
+    (const.NEUTRON_POOLS, _create_lb_op_dict),
+    (const.NEUTRON_MEMBERS, _create_op_dict),
+    (const.NEUTRON_VIPS, _create_op_dict),
+    (const.NEUTRON_HEALTH_MONITORS, _create_op_dict)
 ]
+
+
+@six.add_metaclass(abc.ABCMeta)
+class Neutron(object):
+
+    def __init__(self, client):
+        self.client = client
+
+    def create(self, n_ctx, data):
+        pass
+
+
+class SecurityGroup(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_security_group_precommit(n_ctx, data)
+        self.client.create_security_group_postcommit(data)
+
+
+class Network(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_network_precommit(n_ctx, data)
+        self.client.create_network_postcommit(data)
+
+
+class Subnet(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_subnet_precommit(n_ctx, data)
+        self.client.create_subnet_postcommit(data)
+
+
+class Port(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_port_precommit(n_ctx, data)
+        self.client.create_port_postcommit(data)
+
+
+class Router(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_router_precommit(n_ctx, data)
+        self.client.create_router_postcommit(data)
+
+
+class RouterInterface(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.add_router_interface_precommit(n_ctx, data['id'], data)
+        self.client.add_router_interface_postcommit(data['id'], data)
+
+
+class FloatingIp(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_floatingip_precommit(n_ctx, data)
+        self.client.create_floatingip_postcommit(data)
+
+
+class Pool(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_pool(n_ctx, data)
+
+
+class Member(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_member(n_ctx, data)
+
+
+class Vip(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_vip(n_ctx, data)
+
+
+class HealthMonitor(Neutron):
+
+    def create(self, n_ctx, data):
+        self.client.create_health_monitor(n_ctx, data)
+
+
+def _get_neutron_obj(key, *args, **kwargs):
+    return {
+        const.NEUTRON_SECURITY_GROUPS: SecurityGroup,
+        const.NEUTRON_NETWORKS: Network,
+        const.NEUTRON_SUBNETS: Subnet,
+        const.NEUTRON_PORTS: Port,
+        const.NEUTRON_ROUTERS: Router,
+        const.NEUTRON_ROUTER_INTERFACES: RouterInterface,
+        const.NEUTRON_FLOATINGIPS: FloatingIp,
+        const.NEUTRON_POOLS: Pool,
+        const.NEUTRON_MEMBERS: Member,
+        const.NEUTRON_VIPS: Vip,
+        const.NEUTRON_HEALTH_MONITORS: HealthMonitor
+    }[key](*args, **kwargs)
 
 
 class DataReader(object):
@@ -170,29 +260,32 @@ class DataReader(object):
     @property
     def _get_queries(self):
         return [
-                ('security-groups', self.mc.plugin.get_security_groups, []),
-                ('networks', self.mc.plugin.get_networks, []),
-                ('subnets', self.mc.plugin.get_subnets, []),
-                ('ports', self.mc.plugin.get_ports, []),
-                ('routers', self.mc.plugin.get_routers, []),
-                ('router-interfaces', self.mc.plugin.get_ports,
-                 [utils.ListFilter(check_key='device_owner',
-                                   check_list=['network:router_interface'])]),
-                ('subnet-gateways', self._get_subnet_router,
-                 [utils.ListFilter(check_key='device_owner',
-                                   check_list=['network:router_interface'])]),
-                ('floating-ips', self.mc.plugin.get_floatingips, []),
-                ('load-balancer-pools', self.mc.lb_plugin.get_pools, []),
-                ('members', self.mc.lb_plugin.get_members, []),
-                ('vips', self.mc.lb_plugin.get_vips, []),
-                ('health-monitors', self.mc.lb_plugin.get_health_monitors,
-                 [utils.MinLengthFilter(field='pools', min_len=1)]),
+            (const.NEUTRON_SECURITY_GROUPS,
+             self.mc.plugin.get_security_groups, []),
+            (const.NEUTRON_NETWORKS, self.mc.plugin.get_networks, []),
+            (const.NEUTRON_SUBNETS, self.mc.plugin.get_subnets, []),
+            (const.NEUTRON_PORTS, self.mc.plugin.get_ports, []),
+            (const.NEUTRON_ROUTERS, self.mc.plugin.get_routers, []),
+            (const.NEUTRON_ROUTER_INTERFACES, self.mc.plugin.get_ports,
+             [utils.ListFilter(check_key='device_owner',
+                               check_list=['network:router_interface'])]),
+            (const.NEUTRON_SUBNET_GATEWAYS, self._get_subnet_router,
+             [utils.ListFilter(check_key='device_owner',
+                               check_list=['network:router_interface'])]),
+            (const.NEUTRON_FLOATINGIPS,
+             self.mc.plugin.get_floatingips, []),
+            (const.NEUTRON_POOLS, self.mc.lb_plugin.get_pools, []),
+            (const.NEUTRON_MEMBERS, self.mc.lb_plugin.get_members, []),
+            (const.NEUTRON_VIPS, self.mc.lb_plugin.get_vips, []),
+            (const.NEUTRON_HEALTH_MONITORS,
+             self.mc.lb_plugin.get_health_monitors,
+             [utils.MinLengthFilter(field='pools', min_len=1)]),
         ]
 
     def prepare(self):
         """Prepares a map of object ID -> object from Neutron DB
 
-        It also includes 'tasks' key that includes a list of task entries that
+        It also includes 'ops' key that includes a list of ops entries that
         will be created in migration.
         """
         LOG.info('Preparing Neutron data')
@@ -201,7 +294,7 @@ class DataReader(object):
             obj_map.update(_get_neutron_objects(key=key, func=func,
                                                 context=self.mc.n_ctx,
                                                 filter_list=filter_list))
-        obj_map["tasks"] = _create_task_list(obj_map)
+        obj_map["ops"] = _create_op_list(obj_map)
         return obj_map
 
 
@@ -214,11 +307,12 @@ class DataWriter(object):
 
     def migrate(self):
         LOG.info('Running Neutron migration process')
-        tasks = self.data['neutron']['tasks']
-        for t in tasks:
-            LOG.debug(_print_task(t))
+        ops = self.data['neutron']['ops']
+        for op in ops:
+            LOG.debug(_print_op(op))
+            obj = _get_neutron_obj(op['type'], self.mc.client)
             if not self.dry_run:
-                task.create_task(self.mc.n_ctx, **t)
+                obj.create(self.mc.n_ctx, op['data'])
 
     def _create_data(self, name, f, *args):
         LOG.debug('create ' + name + ":" + map(str, args))
