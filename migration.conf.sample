@@ -1,7 +1,11 @@
 [database]
 # Database conneciton string
 #
+# Uncomment to use pymysql
 # connection = mysql+pymysql://root:midonet@127.0.0.1/neutron?charset=utf8
+#
+# Uncomment to use mysqlconnector
+# connection = mysql+mysqlconnector://root:midonet@127.0.0.1/neutron?charset=utf8
 
 [MIDONET]
 # The following section contains the configurations for midonet plugin
