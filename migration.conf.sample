@@ -1,12 +1,3 @@
-[DEFAULT]
-# Uncomment the line below if you want to use plugin_v1 (v1.9)
-#
-# core_plugin = midonet.neutron.plugin_v1.MidonetPluginV2
-
-# Uncomment the line below if you want to use plugin_v2 (v5.X)
-#
-# core_plugin = midonet.neutron.plugin_v2.MidonetPluginV2
-
 [database]
 # Database conneciton string
 #

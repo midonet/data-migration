@@ -99,7 +99,7 @@ def _to_dto_dict(objs):
 class DataReader(object):
 
     def __init__(self, nd):
-        self.mc = context.get_context()
+        self.mc = context.get_read_context()
         self._provider_router = None
         self._nd = nd
 
@@ -221,7 +221,7 @@ class DataReader(object):
 class DataWriter(object):
 
     def __init__(self, data, dry_run=False):
-        self.mc = context.get_context()
+        self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
 
