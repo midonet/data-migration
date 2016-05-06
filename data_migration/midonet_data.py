@@ -243,7 +243,8 @@ class DataWriter(object):
 
             ports = h["ports"]
             for p in ports:
-                LOG.debug("Binding port host intf: " + str(p) + ", " + host)
+                LOG.debug("Binding port host intf: " + str(p) + ", " +
+                          str(host))
                 if not self.dry_run:
                     self.mc.mn_api.add_host_interface_port(
                         host, port_id=p["id"], interface_name=p["interface"])
