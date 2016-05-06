@@ -174,7 +174,7 @@ class DataReader(object):
 
     def _get_subnet_router(self, context, filters=None):
         new_list = []
-        client = self.mc.client
+        client = self.mc.plugin
         subnets = client.get_subnets(context=context)
         for subnet in subnets:
             subnet_id = subnet['id']
@@ -196,22 +196,22 @@ class DataReader(object):
     @property
     def _get_queries(self):
         return [
-                ('security-groups', self.mc.client.get_security_groups, []),
-                ('networks', self.mc.client.get_networks, []),
-                ('subnets', self.mc.client.get_subnets, []),
-                ('ports', self.mc.client.get_ports, []),
-                ('routers', self.mc.client.get_routers, []),
-                ('router-interfaces', self.mc.client.get_ports,
+                ('security-groups', self.mc.plugin.get_security_groups, []),
+                ('networks', self.mc.plugin.get_networks, []),
+                ('subnets', self.mc.plugin.get_subnets, []),
+                ('ports', self.mc.plugin.get_ports, []),
+                ('routers', self.mc.plugin.get_routers, []),
+                ('router-interfaces', self.mc.plugin.get_ports,
                  [utils.ListFilter(check_key='device_owner',
                                    check_list=['network:router_interface'])]),
                 ('subnet-gateways', self._get_subnet_router,
                  [utils.ListFilter(check_key='device_owner',
                                    check_list=['network:router_interface'])]),
-                ('floating-ips', self.mc.client.get_floatingips, []),
-                ('load-balancer-pools', self.mc.lb_client.get_pools, []),
-                ('members', self.mc.lb_client.get_members, []),
-                ('vips', self.mc.lb_client.get_vips, []),
-                ('health-monitors', self.mc.lb_client.get_health_monitors,
+                ('floating-ips', self.mc.plugin.get_floatingips, []),
+                ('load-balancer-pools', self.mc.lb_plugin.get_pools, []),
+                ('members', self.mc.lb_plugin.get_members, []),
+                ('vips', self.mc.lb_plugin.get_vips, []),
+                ('health-monitors', self.mc.lb_plugin.get_health_monitors,
                  [utils.MinLengthFilter(field='pools', min_len=1)]),
         ]
 
@@ -225,7 +225,7 @@ class DataReader(object):
         obj_map = {}
         for key, func, filter_list in self._get_queries:
             obj_map.update(_get_neutron_objects(key=key, func=func,
-                                                context=self.mc.ctx,
+                                                context=self.mc.n_ctx,
                                                 filter_list=filter_list))
         obj_map["tasks"] = _create_task_list(obj_map)
         return obj_map
@@ -244,14 +244,14 @@ class DataWriter(object):
         for t in tasks:
             LOG.debug(_print_task(t))
             if not self.dry_run:
-                task.create_task(self.mc.ctx, **t)
+                task.create_task(self.mc.n_ctx, **t)
 
     def _create_data(self, name, f, *args):
         LOG.debug('create ' + name + ":" + map(str, args))
         if self.dry_run:
             return {"id": name}
         else:
-            return f(self.mc.ctx, *args)
+            return f(self.mc.n_ctx, *args)
 
     def create_edge_router(self, tenant):
         """Create the edge router
@@ -285,7 +285,7 @@ class DataWriter(object):
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        upl_router = self._create_data("router", self.mc.client.create_router,
+        upl_router = self._create_data("router", self.mc.plugin.create_router,
                                        router_obj)
 
         for port in ports:
@@ -296,7 +296,7 @@ class DataWriter(object):
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
             upl_net = self._create_data("network",
-                                        self.mc.client.create_network, net_obj)
+                                        self.mc.plugin.create_network, net_obj)
 
             subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
                                      'network_id': upl_net['id'],
@@ -308,7 +308,7 @@ class DataWriter(object):
                                      'enable_dhcp': False,
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
-            upl_sub = self._create_data("subnet", self.mc.client.create_subnet,
+            upl_sub = self._create_data("subnet", self.mc.plugin.create_subnet,
                                         subnet_obj)
 
             port_obj = {'port': {'name': base_name + "_uplink_port",
@@ -324,17 +324,17 @@ class DataWriter(object):
                                  'binding:profile': {
                                      'interface_name': port['iface']},
                                  'admin_state_up': port['admin_state_up']}}
-            bound_port = self._create_data("port", self.mc.client.create_port,
+            bound_port = self._create_data("port", self.mc.plugin.create_port,
                                            port_obj)
 
             iface_obj = {'port_id': bound_port['id']}
             self._create_data("router_interface",
-                              self.mc.client.add_router_interface,
+                              self.mc.plugin.add_router_interface,
                               upl_router['id'], iface_obj)
 
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
             self._create_data("router_interface",
-                              self.mc.client.add_router_interface,
+                              self.mc.plugin.add_router_interface,
                               upl_router['id'], iface_obj)

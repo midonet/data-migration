@@ -30,7 +30,7 @@ class MigrationContext(object):
 
     def __init__(self):
         self.mn_api = None
-        self.ctx = None
+        self.n_ctx = None
 
         # Required to bypass an error when instantiating Midonet plugin.
         rpc.init(cfg.CONF)
@@ -43,7 +43,7 @@ class MigrationContext(object):
                                      config.username,
                                      config.password,
                                      project_id=config.project_id)
-        self.ctx = ncntxt.get_admin_context()
+        self.n_ctx = ncntxt.get_admin_context()
 
 
 class MigrationReadContext(MigrationContext):
@@ -54,11 +54,11 @@ class MigrationReadContext(MigrationContext):
         # Only v1 plugin should be loaded.  The path differs between Kilo and
         # the later versions.
         try:
-            self.client = importutils.import_object(cnst.V1_PLUGIN)
+            self.plugin = importutils.import_object(cnst.V1_PLUGIN)
         except ImportError:
-            self.client = importutils.import_object(cnst.LEGACY_PLUGIN)
+            self.plugin = importutils.import_object(cnst.LEGACY_PLUGIN)
 
-        self.lb_client = loadbalancer_db.LoadBalancerPluginDb()
+        self.lb_plugin = loadbalancer_db.LoadBalancerPluginDb()
         self.init_common()
 
 
@@ -68,7 +68,7 @@ class MigrationWriteContext(MigrationContext):
         super(MigrationWriteContext, self).__init__()
 
         # Only v2 plugin should be loaded
-        self.client = importutils.import_object(cnst.V2_PLUGIN)
+        self.plugin = importutils.import_object(cnst.V2_PLUGIN)
         self.init_common()
 
 
