@@ -43,7 +43,7 @@ def main():
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
                              '\tneutron_export: export Neutron data\n'
-                             '\tmidonet_migrate: migrate MidoNet data'
+                             '\tmidonet_migrate: migrate MidoNet data\n'
                              '\tprovider_router: convert provider router to\n'
                              '\t                 edge router\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
