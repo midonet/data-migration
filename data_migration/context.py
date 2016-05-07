@@ -27,6 +27,17 @@ _migration_read_context = None
 _migration_write_context = None
 
 
+def _import_plugin(clazz_path):
+    clazz = importutils.import_class(clazz_path)
+
+    def _setup_rpc(_self):
+        pass
+
+    # HACK to get around the issue of the plugin setting up rpc
+    setattr(clazz, 'setup_rpc', _setup_rpc)
+    return clazz()
+
+
 class MigrationContext(object):
 
     def __init__(self):
@@ -55,9 +66,9 @@ class MigrationReadContext(MigrationContext):
         # Only v1 plugin should be loaded.  The path differs between Kilo and
         # the later versions.
         try:
-            self.plugin = importutils.import_object(cnst.V1_PLUGIN)
+            self.plugin = _import_plugin(cnst.V1_PLUGIN)
         except ImportError:
-            self.plugin = importutils.import_object(cnst.LEGACY_PLUGIN)
+            self.plugin = _import_plugin(cnst.LEGACY_PLUGIN)
 
         self.lb_plugin = loadbalancer_db.LoadBalancerPluginDb()
         self.init_common()
@@ -69,7 +80,7 @@ class MigrationWriteContext(MigrationContext):
         super(MigrationWriteContext, self).__init__()
 
         # Only v2 plugin should be loaded
-        self.plugin = importutils.import_object(cnst.V2_PLUGIN)
+        self.plugin = _import_plugin(cnst.V2_PLUGIN)
         self.init_common()
 
 
