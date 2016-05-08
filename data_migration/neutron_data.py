@@ -77,20 +77,6 @@ def _task_lb(topo, task_model, pid, lb_obj):
             'data': new_lb_obj}
 
 
-def _task_router(_topo, task_model, rid, router_obj):
-    LOG.debug("Preparing " + task_model + ": " + str(rid))
-
-    # Create a router with no routes and update them later
-    routeless_router = {k: v
-                        for k, v in iter(router_obj.items())
-                        if k != 'routes'}
-
-    return {'type': task.CREATE,
-            'data_type': task_model,
-            'resource_id': rid,
-            'data': routeless_router}
-
-
 def _task_router_interface(topo, task_model, pid, port):
     router_obj = topo['routers'][port['device_id']]
     router_id = router_obj['id']
@@ -107,17 +93,6 @@ def _task_router_interface(topo, task_model, pid, port):
             'data_type': task_model,
             'resource_id': router_id,
             'data': interface_dict}
-
-
-def _task_router_routes(_topo, task_model, rid, router_obj):
-    # Update routes if present
-    if 'routes' in router_obj:
-        LOG.debug("Updating " + task_model + ": " + router_obj['id'])
-        return {'type': task.UPDATE,
-                'data_type': task_model,
-                'resource_id': rid,
-                'data': router_obj}
-    return None
 
 
 def _print_task(t):
@@ -156,9 +131,8 @@ _CREATES = [
     ('networks', task.NETWORK, _task_create_by_id),
     ('subnets', task.SUBNET, _task_create_by_id),
     ('ports', task.PORT, _task_create_by_id),
-    ('routers', task.ROUTER, _task_router),
+    ('routers', task.ROUTER, _task_create_by_id),
     ('router-interfaces', "ROUTERINTERFACE", _task_router_interface),
-    ('routers', task.ROUTER, _task_router_routes),
     ('floating-ips', task.FLOATING_IP, _task_create_by_id),
     ('load-balancer-pools', task.POOL, _task_lb),
     ('members', task.MEMBER, _task_create_by_id),
