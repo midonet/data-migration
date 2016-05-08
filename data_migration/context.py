@@ -16,7 +16,6 @@
 from data_migration import constants as cnst
 from midonetclient import api
 from neutron.common import config as n_config  # noqa
-from neutron.common import rpc
 from neutron import context as ncntxt
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
 from oslo_config import cfg
@@ -41,15 +40,6 @@ def _import_plugin(clazz_path):
 class MigrationContext(object):
 
     def __init__(self):
-        self.mn_api = None
-        self.n_ctx = None
-
-        # Required to bypass an error when instantiating Midonet plugin.
-        rpc.init(cfg.CONF)
-
-    def init_common(self):
-        # This cannot be in __init__ since the plugin must be loaded first
-        # before accessing MIDONET config section.
         config = cfg.CONF.MIDONET
         self.mn_api = api.MidonetApi(config.midonet_uri,
                                      config.username,
@@ -61,8 +51,6 @@ class MigrationContext(object):
 class MigrationReadContext(MigrationContext):
 
     def __init__(self):
-        super(MigrationReadContext, self).__init__()
-
         # Only v1 plugin should be loaded.  The path differs between Kilo and
         # the later versions.
         try:
@@ -71,17 +59,15 @@ class MigrationReadContext(MigrationContext):
             self.plugin = _import_plugin(cnst.LEGACY_PLUGIN)
 
         self.lb_plugin = loadbalancer_db.LoadBalancerPluginDb()
-        self.init_common()
+        super(MigrationReadContext, self).__init__()
 
 
 class MigrationWriteContext(MigrationContext):
 
     def __init__(self):
-        super(MigrationWriteContext, self).__init__()
-
         # Only v2 plugin should be loaded
         self.plugin = _import_plugin(cnst.V2_PLUGIN)
-        self.init_common()
+        super(MigrationWriteContext, self).__init__()
 
 
 def get_read_context():
