@@ -255,13 +255,13 @@ class DataWriter(object):
 
     def _bind_hosts(self, bindings):
         for hid, h in iter(bindings.items()):
-            tzs = h["tunnel_zones"]
-            for tz in tzs:
-                LOG.debug("Binding host tz: " + str(tz) + ", " + str(h))
+            tzhs = h["tunnel_zones"]
+            for tzh in tzhs:
+                LOG.debug("Binding host tz: " + str(tzh) + ", " + str(h))
                 if not self.dry_run:
-                    tz = self.mc.mn_api.get_tunnel_zone(tz['id'])
+                    tz = self.mc.mn_api.get_tunnel_zone(tzh['id'])
                     (tz.add_tunnel_zone_host()
-                     .ip_address(h['ip_address'])
+                     .ip_address(tzh['ip_address'])
                      .host_id(hid).create())
 
             if self.dry_run:
