@@ -96,17 +96,48 @@ def _make_op_dict(res_type, obj):
     return {"type": res_type, "data": obj}
 
 
+def _get_subnet_router(context, filters=None):
+    c = ctx.get_read_context()
+    new_list = []
+    subnets = c.plugin.get_subnets(context=context)
+    for subnet in subnets:
+        subnet_id = subnet['id']
+        subnet_gw_ip = subnet['gateway_ip']
+        interfaces = c.plugin.get_ports(context=context, filters=filters)
+        gw_iface = next(
+            (i for i in interfaces
+             if ('fixed_ips' in i and len(i['fixed_ips']) > 0 and
+                 i['fixed_ips'][0]['ip_address'] == subnet_gw_ip and
+                 i['fixed_ips'][0]['subnet_id'] == subnet_id)),
+            None)
+        gw_id = None
+        if gw_iface:
+            gw_id = gw_iface['device_id']
+
+        new_list.append({'id': subnet_id, 'gw_router_id': gw_id})
+    return new_list
+
+
 @six.add_metaclass(abc.ABCMeta)
 class Neutron(object):
+
+    def get(self):
+        pass
 
     def create(self, data):
         pass
 
     def make_op_dict(self, obj_map, obj):
-        pass
+        return None
 
 
 class SecurityGroup(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_SECURITY_GROUPS,
+                                    func=c.plugin.get_security_groups,
+                                    context=c.n_ctx)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -119,6 +150,12 @@ class SecurityGroup(Neutron):
 
 class Network(Neutron):
 
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_NETWORKS,
+                                    func=c.plugin.get_networks,
+                                    context=c.n_ctx)
+
     def create(self, data):
         c = ctx.get_write_context()
         c.client.create_network_precommit(c.n_ctx, data)
@@ -129,6 +166,12 @@ class Network(Neutron):
 
 
 class Subnet(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_SUBNETS,
+                                    func=c.plugin.get_subnets,
+                                    context=c.n_ctx)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -141,6 +184,12 @@ class Subnet(Neutron):
 
 class Port(Neutron):
 
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_PORTS,
+                                    func=c.plugin.get_ports,
+                                    context=c.n_ctx)
+
     def create(self, data):
         c = ctx.get_write_context()
         c.client.create_port_precommit(c.n_ctx, data)
@@ -152,6 +201,12 @@ class Port(Neutron):
 
 class Router(Neutron):
 
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_ROUTERS,
+                                    func=c.plugin.get_routers,
+                                    context=c.n_ctx)
+
     def create(self, data):
         c = ctx.get_write_context()
         c.client.create_router_precommit(c.n_ctx, data)
@@ -162,6 +217,15 @@ class Router(Neutron):
 
 
 class RouterInterface(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        filter_list = [utils.ListFilter(check_key='device_owner',
+                               check_list=['network:router_interface'])]
+        return _get_neutron_objects(key=const.NEUTRON_ROUTER_INTERFACES,
+                                    func=c.plugin.get_ports,
+                                    context=c.n_ctx,
+                                    filter_list=filter_list)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -183,7 +247,26 @@ class RouterInterface(Neutron):
         return _make_op_dict(const.NEUTRON_ROUTER_INTERFACES, interface_dict)
 
 
+class SubnetGateway(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        filter_list = [
+            utils.ListFilter(check_key='device_owner',
+                             check_list=['network:router_interface'])]
+        return _get_neutron_objects(key=const.NEUTRON_SUBNET_GATEWAYS,
+                                    func=_get_subnet_router,
+                                    context=c.n_ctx,
+                                    filter_list=filter_list)
+
+
 class FloatingIp(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_FLOATINGIPS,
+                                    func=c.plugin.get_floatingips,
+                                    context=c.n_ctx)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -195,6 +278,12 @@ class FloatingIp(Neutron):
 
 
 class Pool(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_POOLS,
+                                    func=c.lb_plugin.get_pools,
+                                    context=c.n_ctx)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -219,6 +308,12 @@ class Pool(Neutron):
 
 class Member(Neutron):
 
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_MEMBERS,
+                                    func=c.lb_plugin.get_members,
+                                    context=c.n_ctx)
+
     def create(self, data):
         c = ctx.get_write_context()
         _try_create_obj(c.client.create_member, c.n_ctx, data)
@@ -229,6 +324,12 @@ class Member(Neutron):
 
 class Vip(Neutron):
 
+    def get(self):
+        c = ctx.get_read_context()
+        return _get_neutron_objects(key=const.NEUTRON_VIPS,
+                                    func=c.lb_plugin.get_vips,
+                                    context=c.n_ctx)
+
     def create(self, data):
         c = ctx.get_write_context()
         _try_create_obj(c.client.create_vip, c.n_ctx, data)
@@ -238,6 +339,14 @@ class Vip(Neutron):
 
 
 class HealthMonitor(Neutron):
+
+    def get(self):
+        c = ctx.get_read_context()
+        filter_list = [utils.MinLengthFilter(field='pools', min_len=1)]
+        return _get_neutron_objects(key=const.NEUTRON_HEALTH_MONITORS,
+                                    func=c.lb_plugin.get_health_monitors,
+                                    context=c.n_ctx,
+                                    filter_list=filter_list)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -254,6 +363,7 @@ _NEUTRON_OBJS = [
     (const.NEUTRON_PORTS, Port),
     (const.NEUTRON_ROUTERS, Router),
     (const.NEUTRON_ROUTER_INTERFACES, RouterInterface),
+    (const.NEUTRON_SUBNET_GATEWAYS, SubnetGateway),
     (const.NEUTRON_FLOATINGIPS, FloatingIp),
     (const.NEUTRON_POOLS, Pool),
     (const.NEUTRON_MEMBERS, Member),
@@ -269,52 +379,6 @@ class DataReader(object):
     def __init__(self):
         self.mc = ctx.get_read_context()
 
-    def _get_subnet_router(self, context, filters=None):
-        new_list = []
-        client = self.mc.plugin
-        subnets = client.get_subnets(context=context)
-        for subnet in subnets:
-            subnet_id = subnet['id']
-            subnet_gw_ip = subnet['gateway_ip']
-            interfaces = client.get_ports(context=context, filters=filters)
-            gw_iface = next(
-                (i for i in interfaces
-                    if ('fixed_ips' in i and len(i['fixed_ips']) > 0 and
-                        i['fixed_ips'][0]['ip_address'] == subnet_gw_ip and
-                        i['fixed_ips'][0]['subnet_id'] == subnet_id)),
-                None)
-            gw_id = None
-            if gw_iface:
-                gw_id = gw_iface['device_id']
-
-            new_list.append({'id': subnet_id, 'gw_router_id': gw_id})
-        return new_list
-
-    @property
-    def _get_queries(self):
-        return [
-            (const.NEUTRON_SECURITY_GROUPS,
-             self.mc.plugin.get_security_groups, []),
-            (const.NEUTRON_NETWORKS, self.mc.plugin.get_networks, []),
-            (const.NEUTRON_SUBNETS, self.mc.plugin.get_subnets, []),
-            (const.NEUTRON_PORTS, self.mc.plugin.get_ports, []),
-            (const.NEUTRON_ROUTERS, self.mc.plugin.get_routers, []),
-            (const.NEUTRON_ROUTER_INTERFACES, self.mc.plugin.get_ports,
-             [utils.ListFilter(check_key='device_owner',
-                               check_list=['network:router_interface'])]),
-            (const.NEUTRON_SUBNET_GATEWAYS, self._get_subnet_router,
-             [utils.ListFilter(check_key='device_owner',
-                               check_list=['network:router_interface'])]),
-            (const.NEUTRON_FLOATINGIPS,
-             self.mc.plugin.get_floatingips, []),
-            (const.NEUTRON_POOLS, self.mc.lb_plugin.get_pools, []),
-            (const.NEUTRON_MEMBERS, self.mc.lb_plugin.get_members, []),
-            (const.NEUTRON_VIPS, self.mc.lb_plugin.get_vips, []),
-            (const.NEUTRON_HEALTH_MONITORS,
-             self.mc.lb_plugin.get_health_monitors,
-             [utils.MinLengthFilter(field='pools', min_len=1)]),
-        ]
-
     def prepare(self):
         """Prepares a map of object ID -> object from Neutron DB
 
@@ -323,10 +387,8 @@ class DataReader(object):
         """
         LOG.info('Preparing Neutron data')
         obj_map = {}
-        for key, func, filter_list in self._get_queries:
-            obj_map.update(_get_neutron_objects(key=key, func=func,
-                                                context=self.mc.n_ctx,
-                                                filter_list=filter_list))
+        for res_type, clazz in _NEUTRON_OBJS:
+            obj_map.update(clazz().get())
         obj_map["ops"] = _create_op_list(obj_map)
         return obj_map
 
