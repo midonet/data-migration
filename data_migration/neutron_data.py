@@ -219,8 +219,8 @@ class RouterInterface(Neutron):
 
     def get(self):
         c = ctx.get_read_context()
-        filter_list = [utils.ListFilter(check_key='device_owner',
-                               check_list=['network:router_interface'])]
+        filter_list = [utils.ListFilter(
+            check_key='device_owner', check_list=['network:router_interface'])]
         return _get_neutron_objects(key=const.NEUTRON_ROUTER_INTERFACES,
                                     func=c.plugin.get_ports,
                                     context=c.n_ctx,
