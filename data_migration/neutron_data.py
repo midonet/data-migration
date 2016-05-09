@@ -404,7 +404,7 @@ class DataWriter(object):
                 obj.create(op['data'])
 
     def _create_data(self, name, f, *args):
-        LOG.debug('create ' + name + ":" + map(str, args))
+        LOG.debug('create ' + name + ":" + str(args))
         if self.dry_run:
             return {"id": name}
         else:
