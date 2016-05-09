@@ -403,10 +403,9 @@ class DataWriter(object):
             if not self.dry_run:
                 obj.create(op['data'])
 
-    def _create_neutron_data(self, name, f, *args):
-        LOG.debug('create ' + name + ":" + str(args))
+    def _create_neutron_data(self, f, *args):
         if self.dry_run:
-            return {"id": name}
+            return {}
         else:
             return f(self.mc.n_ctx, *args)
 
@@ -442,8 +441,8 @@ class DataWriter(object):
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        upl_router = self._create_neutron_data("router",
-                                               self.mc.l3_plugin.create_router,
+        LOG.debug("[EDGE ROUTER] Create Router: " + str(router_obj))
+        upl_router = self._create_neutron_data(self.mc.l3_plugin.create_router,
                                                router_obj)
 
         for port in ports:
@@ -453,11 +452,12 @@ class DataWriter(object):
                                    'shared': False,
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
+            LOG.debug("[EDGE ROUTER] Create Network: " + str(net_obj))
             upl_net = self._create_neutron_data(
-                "network", self.mc.plugin.create_network, net_obj)
+                self.mc.plugin.create_network, net_obj)
 
             subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
-                                     'network_id': upl_net['id'],
+                                     'network_id': upl_net.get('id'),
                                      'ip_version': 4,
                                      'cidr': port['network_cidr'],
                                      'dns_nameservers': [],
@@ -466,35 +466,35 @@ class DataWriter(object):
                                      'enable_dhcp': False,
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
-            upl_sub = self._create_neutron_data("subnet",
-                                                self.mc.plugin.create_subnet,
+            LOG.debug("[EDGE ROUTER] Create Subnet: " + str(subnet_obj))
+            upl_sub = self._create_neutron_data(self.mc.plugin.create_subnet,
                                                 subnet_obj)
 
             port_obj = {'port': {'name': base_name + "_uplink_port",
                                  'tenant_id': 'admin',
-                                 'network_id': upl_net['id'],
+                                 'network_id': upl_net.get('id'),
                                  'device_id': '',
                                  'device_owner': '',
                                  'mac_address': port['mac'],
                                  'fixed_ips': [
-                                     {'subnet_id': upl_sub['id'],
+                                     {'subnet_id': upl_sub.get('id'),
                                       'ip_address': port['ip_address']}],
                                  'binding:host_id': port['host'],
                                  'binding:profile': {
                                      'interface_name': port['iface']},
                                  'admin_state_up': port['admin_state_up']}}
-            bound_port = self._create_neutron_data("port",
-                                                   self.mc.plugin.create_port,
+            LOG.debug("[EDGE ROUTER] Create Port: " + str(port_obj))
+            bound_port = self._create_neutron_data(self.mc.plugin.create_port,
                                                    port_obj)
 
-            iface_obj = {'port_id': bound_port['id']}
-            self._create_neutron_data("router_interface",
-                                      self.mc.l3_plugin.add_router_interface,
-                                      upl_router['id'], iface_obj)
+            iface_obj = {'port_id': bound_port.get('id')}
+            LOG.debug("[EDGE ROUTER] Create Router Intf: " + str(iface_obj))
+            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
+                                      upl_router.get('id'), iface_obj)
 
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
-            self._create_neutron_data("router_interface",
-                                      self.mc.l3_plugin.add_router_interface,
-                                      upl_router['id'], iface_obj)
+            LOG.debug("[EDGE ROUTER] Create Router Intf: " + str(iface_obj))
+            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
+                                      upl_router.get('id'), iface_obj)
