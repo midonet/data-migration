@@ -52,41 +52,6 @@ def _get_neutron_objects(key, func, context, filter_list=None):
     return retmap
 
 
-def _create_op_dict(_topo, res_type, obj):
-    LOG.debug("Op: " + res_type + " -> " + str(obj))
-    return {"type": res_type, "data": obj}
-
-
-def _create_lb_op_dict(topo, res_type, lb_obj):
-    lb_subnet = lb_obj['subnet_id']
-    router_id = topo[const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
-    if not router_id:
-        raise exc.UpgradeScriptException(
-            "LB Pool's subnet has no associated gateway router: " + lb_obj)
-
-    new_lb_obj = lb_obj.copy()
-    new_lb_obj['health_monitors'] = []
-    new_lb_obj['health_monitors_status'] = []
-    new_lb_obj['members'] = []
-    new_lb_obj['vip_id'] = None
-    new_lb_obj['router_id'] = router_id
-    return _create_op_dict(topo, res_type, new_lb_obj)
-
-
-def _create_router_interface_op_dict(topo, res_type, port):
-    pid = port['id']
-    router_obj = topo[const.NEUTRON_ROUTERS][port['device_id']]
-    router_id = router_obj['id']
-    if 'fixed_ips' not in port:
-        raise exc.UpgradeScriptException(
-            'Router interface port has no fixed IPs:' + str(port))
-    subnet_id = port['fixed_ips'][0]['subnet_id']
-    interface_dict = {'id': router_id,
-                      'port_id': pid,
-                      'subnet_id': subnet_id}
-    return _create_op_dict(topo, res_type, interface_dict)
-
-
 def _print_op(t):
     return 'Op: ' + ', '.join([t['type'], str(t['data'])])
 
@@ -94,9 +59,10 @@ def _print_op(t):
 def _create_op_list(obj_map):
     """Creates a list of ops to run given a map of object ID -> object"""
     op_list = []
-    for res_type, func in _OPS:
-        for oid, obj in iter(obj_map[res_type].items()):
-            elem = func(obj_map, res_type, obj)
+    for res_type, clazz in _NEUTRON_OBJS:
+        c = clazz()
+        for obj in iter(obj_map[res_type].values()):
+            elem = c.make_op_dict(obj_map, obj)
             if elem:
                 op_list.append(elem)
     return op_list
@@ -118,21 +84,6 @@ def _get_external_subnet_ids(nets):
     return subnet_ids
 
 
-_OPS = [
-    (const.NEUTRON_SECURITY_GROUPS, _create_op_dict),
-    (const.NEUTRON_NETWORKS, _create_op_dict),
-    (const.NEUTRON_SUBNETS, _create_op_dict),
-    (const.NEUTRON_PORTS, _create_op_dict),
-    (const.NEUTRON_ROUTERS, _create_op_dict),
-    (const.NEUTRON_ROUTER_INTERFACES, _create_router_interface_op_dict),
-    (const.NEUTRON_FLOATINGIPS, _create_op_dict),
-    (const.NEUTRON_POOLS, _create_lb_op_dict),
-    (const.NEUTRON_MEMBERS, _create_op_dict),
-    (const.NEUTRON_VIPS, _create_op_dict),
-    (const.NEUTRON_HEALTH_MONITORS, _create_op_dict)
-]
-
-
 def _try_create_obj(f, *args):
     try:
         f(*args)
@@ -140,88 +91,160 @@ def _try_create_obj(f, *args):
         LOG.warn("WARNING: Creation failed with ID conflict: " + str(e))
 
 
+def _make_op_dict(res_type, obj):
+    LOG.debug("Op: " + res_type + " -> " + str(obj))
+    return {"type": res_type, "data": obj}
+
+
 @six.add_metaclass(abc.ABCMeta)
 class Neutron(object):
 
-    def __init__(self, client):
-        self.client = client
+    def create(self, data):
+        pass
 
-    def create(self, n_ctx, data):
+    def make_op_dict(self, obj_map, obj):
         pass
 
 
 class SecurityGroup(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_security_group_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_security_group_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_security_group_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_security_group_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_SECURITY_GROUPS, obj)
 
 
 class Network(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_network_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_network_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_network_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_network_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_NETWORKS, obj)
 
 
 class Subnet(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_subnet_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_subnet_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_subnet_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_subnet_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_SUBNETS, obj)
 
 
 class Port(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_port_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_port_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_port_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_port_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_PORTS, obj)
 
 
 class Router(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_router_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_router_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_router_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_router_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_ROUTERS, obj)
 
 
 class RouterInterface(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.add_router_interface_precommit(n_ctx, data['id'], data)
-        _try_create_obj(self.client.add_router_interface_postcommit,
-                        data['id'], data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.add_router_interface_precommit(c.n_ctx, data['id'], data)
+        _try_create_obj(c.client.add_router_interface_postcommit, data['id'],
+                        data)
+
+    def make_op_dict(self, obj_map, obj):
+        pid = obj['id']
+        router_obj = obj_map[const.NEUTRON_ROUTERS][obj['device_id']]
+        router_id = router_obj['id']
+        if 'fixed_ips' not in obj:
+            raise exc.UpgradeScriptException(
+                'Router interface port has no fixed IPs:' + str(obj))
+        subnet_id = obj['fixed_ips'][0]['subnet_id']
+        interface_dict = {'id': router_id,
+                          'port_id': pid,
+                          'subnet_id': subnet_id}
+        return _make_op_dict(const.NEUTRON_ROUTER_INTERFACES, interface_dict)
 
 
 class FloatingIp(Neutron):
 
-    def create(self, n_ctx, data):
-        self.client.create_floatingip_precommit(n_ctx, data)
-        _try_create_obj(self.client.create_floatingip_postcommit, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        c.client.create_floatingip_precommit(c.n_ctx, data)
+        _try_create_obj(c.client.create_floatingip_postcommit, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_FLOATINGIPS, obj)
 
 
 class Pool(Neutron):
 
-    def create(self, n_ctx, data):
-        _try_create_obj(self.client.create_pool, n_ctx, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        _try_create_obj(c.client.create_pool, c.n_ctx, data)
+
+    def make_op_dict(self, obj_map, obj):
+        lb_subnet = obj['subnet_id']
+        router_id = obj_map[
+            const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
+        if not router_id:
+            raise exc.UpgradeScriptException(
+                "LB Pool's subnet has no associated gateway router: " + obj)
+
+        new_lb_obj = obj.copy()
+        new_lb_obj['health_monitors'] = []
+        new_lb_obj['health_monitors_status'] = []
+        new_lb_obj['members'] = []
+        new_lb_obj['vip_id'] = None
+        new_lb_obj['router_id'] = router_id
+        return _make_op_dict(const.NEUTRON_POOLS, new_lb_obj)
 
 
 class Member(Neutron):
 
-    def create(self, n_ctx, data):
-        _try_create_obj(self.client.create_member, n_ctx, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        _try_create_obj(c.client.create_member, c.n_ctx, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_MEMBERS, obj)
 
 
 class Vip(Neutron):
 
-    def create(self, n_ctx, data):
-        _try_create_obj(self.client.create_vip, n_ctx, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        _try_create_obj(c.client.create_vip, c.n_ctx, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_VIPS, obj)
 
 
 class HealthMonitor(Neutron):
 
-    def create(self, n_ctx, data):
-        _try_create_obj(self.client.create_health_monitor, n_ctx, data)
+    def create(self, data):
+        c = ctx.get_write_context()
+        _try_create_obj(c.client.create_health_monitor, c.n_ctx, data)
+
+    def make_op_dict(self, obj_map, obj):
+        return _make_op_dict(const.NEUTRON_HEALTH_MONITORS, obj)
 
 
 def _get_neutron_obj(key, *args, **kwargs):
@@ -238,6 +261,21 @@ def _get_neutron_obj(key, *args, **kwargs):
         const.NEUTRON_VIPS: Vip,
         const.NEUTRON_HEALTH_MONITORS: HealthMonitor
     }[key](*args, **kwargs)
+
+
+_NEUTRON_OBJS = [
+    (const.NEUTRON_SECURITY_GROUPS, SecurityGroup),
+    (const.NEUTRON_NETWORKS, Network),
+    (const.NEUTRON_SUBNETS, Subnet),
+    (const.NEUTRON_PORTS, Port),
+    (const.NEUTRON_ROUTERS, Router),
+    (const.NEUTRON_ROUTER_INTERFACES, RouterInterface),
+    (const.NEUTRON_FLOATINGIPS, FloatingIp),
+    (const.NEUTRON_POOLS, Pool),
+    (const.NEUTRON_MEMBERS, Member),
+    (const.NEUTRON_VIPS, Vip),
+    (const.NEUTRON_HEALTH_MONITORS, HealthMonitor)
+]
 
 
 class DataReader(object):
@@ -319,9 +357,9 @@ class DataWriter(object):
         ops = self.data['neutron']['ops']
         for op in ops:
             LOG.debug(_print_op(op))
-            obj = _get_neutron_obj(op['type'], self.mc.client)
+            obj = _get_neutron_obj(op['type'])
             if not self.dry_run:
-                obj.create(self.mc.n_ctx, op['data'])
+                obj.create(op['data'])
 
     def _create_data(self, name, f, *args):
         LOG.debug('create ' + name + ":" + map(str, args))
