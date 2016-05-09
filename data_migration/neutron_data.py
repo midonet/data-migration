@@ -59,10 +59,9 @@ def _print_op(t):
 def _create_op_list(obj_map):
     """Creates a list of ops to run given a map of object ID -> object"""
     op_list = []
-    for res_type, clazz in _NEUTRON_OBJS:
-        c = clazz()
+    for res_type, n_obj in _NEUTRON_OBJS:
         for obj in iter(obj_map[res_type].values()):
-            elem = c.make_op_dict(obj_map, obj)
+            elem = n_obj.make_op_dict(obj_map, obj)
             if elem:
                 op_list.append(elem)
     return op_list
@@ -357,18 +356,18 @@ class HealthMonitor(Neutron):
 
 
 _NEUTRON_OBJS = [
-    (const.NEUTRON_SECURITY_GROUPS, SecurityGroup),
-    (const.NEUTRON_NETWORKS, Network),
-    (const.NEUTRON_SUBNETS, Subnet),
-    (const.NEUTRON_PORTS, Port),
-    (const.NEUTRON_ROUTERS, Router),
-    (const.NEUTRON_ROUTER_INTERFACES, RouterInterface),
-    (const.NEUTRON_SUBNET_GATEWAYS, SubnetGateway),
-    (const.NEUTRON_FLOATINGIPS, FloatingIp),
-    (const.NEUTRON_POOLS, Pool),
-    (const.NEUTRON_MEMBERS, Member),
-    (const.NEUTRON_VIPS, Vip),
-    (const.NEUTRON_HEALTH_MONITORS, HealthMonitor)
+    (const.NEUTRON_SECURITY_GROUPS, SecurityGroup()),
+    (const.NEUTRON_NETWORKS, Network()),
+    (const.NEUTRON_SUBNETS, Subnet()),
+    (const.NEUTRON_PORTS, Port()),
+    (const.NEUTRON_ROUTERS, Router()),
+    (const.NEUTRON_ROUTER_INTERFACES, RouterInterface()),
+    (const.NEUTRON_SUBNET_GATEWAYS, SubnetGateway()),
+    (const.NEUTRON_FLOATINGIPS, FloatingIp()),
+    (const.NEUTRON_POOLS, Pool()),
+    (const.NEUTRON_MEMBERS, Member()),
+    (const.NEUTRON_VIPS, Vip()),
+    (const.NEUTRON_HEALTH_MONITORS, HealthMonitor())
 ]
 
 _NEUTRON_OBJ_MAP = {key: value for (key, value) in _NEUTRON_OBJS}
@@ -387,8 +386,8 @@ class DataReader(object):
         """
         LOG.info('Preparing Neutron data')
         obj_map = {}
-        for res_type, clazz in _NEUTRON_OBJS:
-            obj_map.update(clazz().get())
+        for res_type, obj in _NEUTRON_OBJS:
+            obj_map.update(obj.get())
         obj_map["ops"] = _create_op_list(obj_map)
         return obj_map
 
@@ -405,7 +404,7 @@ class DataWriter(object):
         ops = self.data['neutron']['ops']
         for op in ops:
             LOG.debug(_print_op(op))
-            obj = _NEUTRON_OBJ_MAP[op['type']]()
+            obj = _NEUTRON_OBJ_MAP[op['type']]
             if not self.dry_run:
                 obj.create(op['data'])
 
