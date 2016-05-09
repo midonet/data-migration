@@ -12,7 +12,7 @@ How to Run
 
 ``migrate.py`` command is defined as follows::
 
-     $ ./migrate_py [-h|--help] [-d|--debug] [-n|--dryrun]
+     $ ./migrate_py [-h|--help] [-d|--debug] [-n|--dryrun] [-t|--tenant]
                     [-c|--conf <conf_file>]
                     <command>
 Options::
@@ -22,6 +22,9 @@ Options::
 
      -d,--debug
          Turn on debug level logging.  Default is off.
+
+     -t, --tenant
+         Tenant ID to use for the Provider Router to edge router conversion.
 
      -n,--dryrun
          Run the command but only print out actions that would be taken
@@ -36,14 +39,10 @@ Commands::
      prepare
          Output in JSON the existing Neutron resource ID -> resource object
          mappings and MidoNet data required for migration.
-     neutron_export
-         Export the Neutron data by inserting Neutron objects to
-         `midonet_tasks' table of Neutron DB where they will be imported to
-         midonet cluster.  With --dryrun, nothing gets inserted.  The input of
-         this command is the JSON output from 'prepare' command.
-     midonet_migrate
-        Migrate the MidoNet data into midonet cluster given as input the output
-        from 'prepare' command.
-     provider_router
-         Convert the MidoNet Provider Router to an edge router.  The input to
-         this command is the JSON output from 'prepare' command.
+     migrate
+         Migrate both Neutron generated and MidoNet generated data to the
+         midonet cluster.  It also includes converting the MidoNet Provider
+         Router to an edge router.  -t (--tenant) must be set if the provider
+         router is included in the migration.  The input to this command is
+         the JSON output from the 'prepare' command.  Provider router
+         conversion is only performed if it is present in the input data.

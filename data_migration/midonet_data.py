@@ -388,7 +388,7 @@ class DataWriter(object):
                      .create)
             self._create_data("tunnel zone", f, tz)
 
-    def create_objects(self):
+    def migrate(self):
         """Create all the midonet objects
 
         Expected input:

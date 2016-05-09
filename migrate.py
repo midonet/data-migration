@@ -42,10 +42,7 @@ def main():
     parser.add_argument('command', action='store',
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
-                             '\tneutron_export: export Neutron data\n'
-                             '\tmidonet_migrate: migrate MidoNet data\n'
-                             '\tprovider_router: convert provider router to\n'
-                             '\t                 edge router\n')
+                             '\tmigrate: migrate data from JSON input\n')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -75,22 +72,23 @@ def main():
             "midonet": mm.prepare()
         }
         print(json.dumps(output))
-    elif args.command == "neutron_export":
+    elif args.command == "migrate":
         source = sys.stdin.readline()
-        nm = nd.DataWriter(json.loads(source), dry_run=dry_run)
-        nm.migrate()
-    elif args.command == "provider_router":
-        tenant = args.tenant
-        if not tenant:
-            _exit_on_error("tenant is required for this command", parser)
+        json_source = json.loads(source)
+        nm = nd.DataWriter(json_source, dry_run=dry_run)
 
-        source = sys.stdin.readline()
-        nm = nd.DataWriter(json.loads(source), dry_run=dry_run)
-        nm.create_edge_router(tenant)
-    elif args.command == "midonet_migrate":
-        source = sys.stdin.readline()
-        mm = md.DataWriter(json.loads(source), dry_run=dry_run)
-        mm.create_objects()
+        has_prov_router = json_source["midonet"].get("provider_router")
+        if has_prov_router:
+            if not args.tenant:
+                _exit_on_error("tenant is required for this command", parser)
+
+        nm.migrate()
+
+        if has_prov_router:
+            nm.create_edge_router(args.tenant)
+
+        mm = md.DataWriter(json_source, dry_run=dry_run)
+        mm.migrate()
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 
