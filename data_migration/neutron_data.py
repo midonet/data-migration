@@ -247,22 +247,6 @@ class HealthMonitor(Neutron):
         return _make_op_dict(const.NEUTRON_HEALTH_MONITORS, obj)
 
 
-def _get_neutron_obj(key, *args, **kwargs):
-    return {
-        const.NEUTRON_SECURITY_GROUPS: SecurityGroup,
-        const.NEUTRON_NETWORKS: Network,
-        const.NEUTRON_SUBNETS: Subnet,
-        const.NEUTRON_PORTS: Port,
-        const.NEUTRON_ROUTERS: Router,
-        const.NEUTRON_ROUTER_INTERFACES: RouterInterface,
-        const.NEUTRON_FLOATINGIPS: FloatingIp,
-        const.NEUTRON_POOLS: Pool,
-        const.NEUTRON_MEMBERS: Member,
-        const.NEUTRON_VIPS: Vip,
-        const.NEUTRON_HEALTH_MONITORS: HealthMonitor
-    }[key](*args, **kwargs)
-
-
 _NEUTRON_OBJS = [
     (const.NEUTRON_SECURITY_GROUPS, SecurityGroup),
     (const.NEUTRON_NETWORKS, Network),
@@ -276,6 +260,8 @@ _NEUTRON_OBJS = [
     (const.NEUTRON_VIPS, Vip),
     (const.NEUTRON_HEALTH_MONITORS, HealthMonitor)
 ]
+
+_NEUTRON_OBJ_MAP = {key: value for (key, value) in _NEUTRON_OBJS}
 
 
 class DataReader(object):
@@ -357,7 +343,7 @@ class DataWriter(object):
         ops = self.data['neutron']['ops']
         for op in ops:
             LOG.debug(_print_op(op))
-            obj = _get_neutron_obj(op['type'])
+            obj = _NEUTRON_OBJ_MAP[op['type']]()
             if not self.dry_run:
                 obj.create(op['data'])
 
