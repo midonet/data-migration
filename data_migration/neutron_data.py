@@ -373,23 +373,18 @@ _NEUTRON_OBJS = [
 _NEUTRON_OBJ_MAP = {key: value for (key, value) in _NEUTRON_OBJS}
 
 
-class DataReader(object):
+def prepare():
+    """Prepares a map of object ID -> object from Neutron DB
 
-    def __init__(self):
-        self.mc = ctx.get_read_context()
-
-    def prepare(self):
-        """Prepares a map of object ID -> object from Neutron DB
-
-        It also includes 'ops' key that includes a list of ops entries that
-        will be created in migration.
-        """
-        LOG.info('Preparing Neutron data')
-        obj_map = {}
-        for res_type, obj in _NEUTRON_OBJS:
-            obj_map.update(obj.get())
-        obj_map["ops"] = _create_op_list(obj_map)
-        return obj_map
+    It also includes 'ops' key that includes a list of ops entries that
+    will be created in migration.
+    """
+    LOG.info('Preparing Neutron data')
+    obj_map = {}
+    for res_type, obj in _NEUTRON_OBJS:
+        obj_map.update(obj.get())
+    obj_map["ops"] = _create_op_list(obj_map)
+    return obj_map
 
 
 class DataWriter(object):

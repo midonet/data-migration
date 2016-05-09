@@ -68,8 +68,7 @@ def main():
 
     # Start the migration
     if args.command == "prepare":
-        nm = nd.DataReader()
-        n_data = nm.prepare()
+        n_data = nd.prepare()
         mm = md.DataReader(n_data)
         output = {
             "neutron": n_data,
