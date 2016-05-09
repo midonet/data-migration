@@ -403,7 +403,7 @@ class DataWriter(object):
             if not self.dry_run:
                 obj.create(op['data'])
 
-    def _create_data(self, name, f, *args):
+    def _create_neutron_data(self, name, f, *args):
         LOG.debug('create ' + name + ":" + str(args))
         if self.dry_run:
             return {"id": name}
@@ -442,9 +442,9 @@ class DataWriter(object):
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        upl_router = self._create_data("router",
-                                       self.mc.l3_plugin.create_router,
-                                       router_obj)
+        upl_router = self._create_neutron_data("router",
+                                               self.mc.l3_plugin.create_router,
+                                               router_obj)
 
         for port in ports:
             base_name = port['host'] + "_" + port['iface']
@@ -453,8 +453,8 @@ class DataWriter(object):
                                    'shared': False,
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
-            upl_net = self._create_data("network",
-                                        self.mc.plugin.create_network, net_obj)
+            upl_net = self._create_neutron_data(
+                "network", self.mc.plugin.create_network, net_obj)
 
             subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
                                      'network_id': upl_net['id'],
@@ -466,8 +466,9 @@ class DataWriter(object):
                                      'enable_dhcp': False,
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
-            upl_sub = self._create_data("subnet", self.mc.plugin.create_subnet,
-                                        subnet_obj)
+            upl_sub = self._create_neutron_data("subnet",
+                                                self.mc.plugin.create_subnet,
+                                                subnet_obj)
 
             port_obj = {'port': {'name': base_name + "_uplink_port",
                                  'tenant_id': 'admin',
@@ -482,17 +483,18 @@ class DataWriter(object):
                                  'binding:profile': {
                                      'interface_name': port['iface']},
                                  'admin_state_up': port['admin_state_up']}}
-            bound_port = self._create_data("port", self.mc.plugin.create_port,
-                                           port_obj)
+            bound_port = self._create_neutron_data("port",
+                                                   self.mc.plugin.create_port,
+                                                   port_obj)
 
             iface_obj = {'port_id': bound_port['id']}
-            self._create_data("router_interface",
-                              self.mc.l3_plugin.add_router_interface,
-                              upl_router['id'], iface_obj)
+            self._create_neutron_data("router_interface",
+                                      self.mc.l3_plugin.add_router_interface,
+                                      upl_router['id'], iface_obj)
 
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
-            self._create_data("router_interface",
-                              self.mc.l3_plugin.add_router_interface,
-                              upl_router['id'], iface_obj)
+            self._create_neutron_data("router_interface",
+                                      self.mc.l3_plugin.add_router_interface,
+                                      upl_router['id'], iface_obj)
