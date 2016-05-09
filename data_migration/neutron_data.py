@@ -442,7 +442,8 @@ class DataWriter(object):
         router_obj = {'router': {'name': router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up': router['admin_state_up']}}
-        upl_router = self._create_data("router", self.mc.plugin.create_router,
+        upl_router = self._create_data("router",
+                                       self.mc.l3_plugin.create_router,
                                        router_obj)
 
         for port in ports:
@@ -486,12 +487,12 @@ class DataWriter(object):
 
             iface_obj = {'port_id': bound_port['id']}
             self._create_data("router_interface",
-                              self.mc.plugin.add_router_interface,
+                              self.mc.l3_plugin.add_router_interface,
                               upl_router['id'], iface_obj)
 
         subnet_ids = _get_external_subnet_ids(nets)
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
             self._create_data("router_interface",
-                              self.mc.plugin.add_router_interface,
+                              self.mc.l3_plugin.add_router_interface,
                               upl_router['id'], iface_obj)

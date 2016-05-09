@@ -67,6 +67,7 @@ class MigrationWriteContext(MigrationContext):
     def __init__(self):
         # Only v2 plugin should be loaded
         self.plugin = _import_plugin(cnst.V2_PLUGIN)
+        self.l3_plugin = importutils.import_object(cnst.L3_PLUGIN)
         super(MigrationWriteContext, self).__init__()
         self.client = importutils.import_object(self.config.client,
                                                 self.config)

@@ -23,6 +23,7 @@ PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'
 LEGACY_PLUGIN = "neutron.plugins.midonet.plugin.MidonetPluginV2"
 V1_PLUGIN = "midonet.neutron.plugin_v1.MidonetPluginV2"
 V2_PLUGIN = "midonet.neutron.plugin_v2.MidonetPluginV2"
+L3_PLUGIN = "midonet.neutron.services.l3.l3_midonet.MidonetL3ServicePlugin"
 
 # Neutron data resource names
 NEUTRON_SECURITY_GROUPS = "security-groups"
