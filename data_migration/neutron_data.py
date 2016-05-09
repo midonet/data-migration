@@ -20,6 +20,7 @@ from data_migration import exceptions as exc
 from data_migration import utils
 import logging
 import six
+from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
 
@@ -132,6 +133,13 @@ _OPS = [
 ]
 
 
+def _try_create_obj(f, *args):
+    try:
+        f(*args)
+    except wexc.HTTPConflict as e:
+        LOG.warn("WARNING: Creation failed with ID conflict: " + str(e))
+
+
 @six.add_metaclass(abc.ABCMeta)
 class Neutron(object):
 
@@ -146,73 +154,74 @@ class SecurityGroup(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_security_group_precommit(n_ctx, data)
-        self.client.create_security_group_postcommit(data)
+        _try_create_obj(self.client.create_security_group_postcommit, data)
 
 
 class Network(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_network_precommit(n_ctx, data)
-        self.client.create_network_postcommit(data)
+        _try_create_obj(self.client.create_network_postcommit, data)
 
 
 class Subnet(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_subnet_precommit(n_ctx, data)
-        self.client.create_subnet_postcommit(data)
+        _try_create_obj(self.client.create_subnet_postcommit, data)
 
 
 class Port(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_port_precommit(n_ctx, data)
-        self.client.create_port_postcommit(data)
+        _try_create_obj(self.client.create_port_postcommit, data)
 
 
 class Router(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_router_precommit(n_ctx, data)
-        self.client.create_router_postcommit(data)
+        _try_create_obj(self.client.create_router_postcommit, data)
 
 
 class RouterInterface(Neutron):
 
     def create(self, n_ctx, data):
         self.client.add_router_interface_precommit(n_ctx, data['id'], data)
-        self.client.add_router_interface_postcommit(data['id'], data)
+        _try_create_obj(self.client.add_router_interface_postcommit,
+                        data['id'], data)
 
 
 class FloatingIp(Neutron):
 
     def create(self, n_ctx, data):
         self.client.create_floatingip_precommit(n_ctx, data)
-        self.client.create_floatingip_postcommit(data)
+        _try_create_obj(self.client.create_floatingip_postcommit, data)
 
 
 class Pool(Neutron):
 
     def create(self, n_ctx, data):
-        self.client.create_pool(n_ctx, data)
+        _try_create_obj(self.client.create_pool, n_ctx, data)
 
 
 class Member(Neutron):
 
     def create(self, n_ctx, data):
-        self.client.create_member(n_ctx, data)
+        _try_create_obj(self.client.create_member, n_ctx, data)
 
 
 class Vip(Neutron):
 
     def create(self, n_ctx, data):
-        self.client.create_vip(n_ctx, data)
+        _try_create_obj(self.client.create_vip, n_ctx, data)
 
 
 class HealthMonitor(Neutron):
 
     def create(self, n_ctx, data):
-        self.client.create_health_monitor(n_ctx, data)
+        _try_create_obj(self.client.create_health_monitor, n_ctx, data)
 
 
 def _get_neutron_obj(key, *args, **kwargs):
