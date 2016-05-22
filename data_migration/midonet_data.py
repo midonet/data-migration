@@ -79,6 +79,21 @@ def _convert_to_host2tz_map(tzs):
     return host2tz
 
 
+def _convert_to_bridge_to_dhcp_subnet_map(bridges):
+    subnet_map = {}
+    for bridge in bridges:
+        subnets = bridge.get_dhcp_subnets()
+        if subnets:
+            subnet_list = []
+            for subnet in subnets:
+                # Also add hosts
+                subnet_list.append(
+                    {"subnet": subnet.dto,
+                     "hosts": _to_dto_dict(subnet.get_dhcp_hosts())})
+            subnet_map[bridge.get_id()] = subnet_list
+    return subnet_map
+
+
 def _is_neutron_port(port, n_ports):
     peer_id = port.get_peer_id()
     return port.get_id() in n_ports or (peer_id is not None and
@@ -114,7 +129,7 @@ def _create_data(f, obj):
         return f()
     except wexc.HTTPClientError as e:
         if e.code == wexc.HTTPConflict.code:
-            LOG.warn("Already exists: " + obj['id'])
+            LOG.warn("Already exists: " + str(obj))
 
 
 class DataReader(object):
@@ -244,6 +259,7 @@ class DataReader(object):
         return {
             "hosts": _to_dto_dict(hosts),
             "bridges": _to_dto_dict(bridges),
+            "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
@@ -338,6 +354,40 @@ class DataWriter(object):
             if not self.dry_run:
                 results[router['id']] = _create_data(f, router)
         return results
+
+    def _create_dhcp_subnets(self, dhcp_subnets, bridges):
+        for bid, subnets in iter(dhcp_subnets.items()):
+            for subnet in subnets:
+                LOG.debug("Creating dhcp subnet " + str(subnet) +
+                          " for bridge " + str(bid))
+                if self.dry_run:
+                    continue
+
+                # Putting this here instead of outside this loop only so that
+                # dry-run does not crap out.
+                bridge = _get_obj(self.mc.mn_api.get_bridge, bid,
+                                  cache_map=bridges)
+                s = subnet['subnet']
+                f = (bridge.add_dhcp_subnet()
+                     .default_gateway(s['defaultGateway'])
+                     .server_addr(s['serverAddr'])
+                     .dns_server_addrs(s['dnsServerAddrs'])
+                     .subnet_prefix(s['subnetPrefix'])
+                     .subnet_length(s['subnetLength'])
+                     .interface_mtu(s['interfaceMTU'])
+                     .opt121_routes(s['opt121Routes'])
+                     .enabled(s['enabled'])
+                     .create)
+                subnet_obj = _create_data(f, s)
+
+                hosts = subnet['hosts']
+                for h in hosts:
+                    f = (subnet_obj.add_dhcp_host()
+                         .name(h['name'])
+                         .ip_addr(h['ipAddr'])
+                         .mac_addr(h['macAddr'])
+                         .create)
+                    _create_data(f, h)
 
     def _create_ports(self, ports, bridges, routers):
         results = {}
@@ -468,6 +518,23 @@ class DataWriter(object):
                           "name": String,
                           "tenantId": String,
                           "stateful": Bool, ...],
+         "dhcp_subnets": {UUID (Bridge Id):
+                          [{"subnet":
+                            {"defaultGateway": String,
+                             "serverAddr": String,
+                             "dnsServerAddrs": [String],
+                             "subnetPrefix": String,
+                             "subnetLength": Int,
+                             "interfaceMTU": Int,
+                             "enabled", Bool,
+                             "opt121Routes": [{"destinationPrefix": String,
+                                               "destinationLength": Int,
+                                               "gatewayAddr": String}, ...],
+                            },
+                           "hosts"; [{"name": String,
+                                      "ipAddr": String,
+                                      "macAddr": String}, ...]
+                          ], ...}, ...
         }
         """
         LOG.info('Running MidoNet migration process')
@@ -479,5 +546,8 @@ class DataWriter(object):
         routers = self._create_routers(mido_data['routers'])
         self._create_ip_addr_groups(mido_data['ip_addr_groups'])
         self._create_port_groups(mido_data['port_groups'])
+
+        # Sub-resources
+        self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
         self._create_ports(mido_data['ports'], bridges, routers)
         self._bind_hosts(mido_data['host_bindings'])
