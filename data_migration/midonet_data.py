@@ -285,9 +285,10 @@ class DataWriter(object):
                 LOG.debug("Binding host tz: " + str(tzh) + ", " + str(h))
                 if not self.dry_run:
                     tz = self.mc.mn_api.get_tunnel_zone(tzh['id'])
-                    (tz.add_tunnel_zone_host()
-                     .ip_address(tzh['ip_address'])
-                     .host_id(hid).create())
+                    f = (tz.add_tunnel_zone_host()
+                         .ip_address(tzh['ip_address'])
+                         .host_id(hid).create)
+                    _create_data(f, tzh)
 
             if self.dry_run:
                 host = {"id": "fake_host"}
@@ -299,6 +300,7 @@ class DataWriter(object):
                 LOG.debug("Binding port host intf: " + str(p) + ", " +
                           str(host))
                 if not self.dry_run:
+                    # TODO(RYU): Fix MN to throw 409 on dup bindings
                     self.mc.mn_api.add_host_interface_port(
                         host, port_id=p["id"], interface_name=p["interface"])
 
