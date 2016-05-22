@@ -148,6 +148,7 @@ class DataReader(object):
     def __init__(self, nd):
         self.mc = context.get_read_context()
         self._provider_router = None
+        self._provider_router_ports = []
         self._nd = nd
 
     def _get_provider_router(self):
@@ -167,19 +168,29 @@ class DataReader(object):
         if self._provider_router is None:
             self._provider_router = self._get_provider_router()
             LOG.debug("Provider Router: " + str(self._provider_router))
+            self._provider_router_ports = self.provider_router.get_ports()
+            LOG.debug("Provider Router Ports: " +
+                      str(self._provider_router_ports))
         return self._provider_router
+
+    def _is_provider_router_port_or_peer_port(self, port):
+        pr_ports = [p.get_id() for p in self._provider_router_ports]
+        pr_peer_ports = [p.get_peer_id() for p in self._provider_router_ports
+                         if p.get_peer_id()]
+        ports = set(pr_ports + pr_peer_ports)
+        return port.get_id() in ports
 
     def _port_filter(self, ports):
         """We want to exclude the following ports:
 
         1. ID matching one of the neutron port IDs
         2. Peer ID, if present, matching one of Neutron port IDs
-        3. Provider router ports
+        3. Provider router ports and their peers
         """
         n_ports = self._neutron_ids("ports")
-        pr_id = self._provider_router.get_id()
-        return [p for p in ports if (p.get_device_id() != pr_id
-                                     and not _is_neutron_port(p, n_ports))]
+        return [p for p in ports if not (
+            self._is_provider_router_port_or_peer_port(p)
+            or _is_neutron_port(p, n_ports))]
 
     def _get_host_ports(self, host, pr_id):
         port_list = []
@@ -226,8 +237,7 @@ class DataReader(object):
         Neutron expects.
         """
         ports = []
-        pr_ports = self.provider_router.get_ports()
-        for p in pr_ports:
+        for p in self._provider_router_ports:
             if _port_is_bound(p):
                 h_name = host_id2name_map[p.get_host_id()]
                 port = _make_provider_router_port_dict(p, h_name,
