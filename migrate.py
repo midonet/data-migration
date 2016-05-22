@@ -75,20 +75,20 @@ def main():
     elif args.command == "migrate":
         source = sys.stdin.readline()
         json_source = json.loads(source)
+
         nm = nd.DataWriter(json_source, dry_run=dry_run)
-
-        has_prov_router = json_source["midonet"].get("provider_router")
-        if has_prov_router:
-            if not args.tenant:
-                _exit_on_error("tenant is required for this command", parser)
-
         nm.migrate()
-
-        if has_prov_router:
-            nm.create_edge_router(args.tenant)
 
         mm = md.DataWriter(json_source, dry_run=dry_run)
         mm.migrate()
+    elif args.command == "pr2er":
+        if not args.tenant:
+            _exit_on_error("tenant is required for this command", parser)
+
+        source = sys.stdin.readline()
+        json_source = json.loads(source)
+        nm = nd.DataWriter(json_source, dry_run=dry_run)
+        nm.create_edge_router(args.tenant)
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

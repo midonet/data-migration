@@ -41,8 +41,9 @@ Commands::
          mappings and MidoNet data required for migration.
      migrate
          Migrate both Neutron generated and MidoNet generated data to the
-         midonet cluster.  It also includes converting the MidoNet Provider
-         Router to an edge router.  -t (--tenant) must be set if the provider
-         router is included in the migration.  The input to this command is
-         the JSON output from the 'prepare' command.  Provider router
-         conversion is only performed if it is present in the input data.
+         midonet cluster.  The input to this command is the JSON output from
+         the 'prepare' command.
+     pr2er
+         Convert provider router to edge router and uplink networks.
+         -t (--tenant) must be set for this command.  The input to this command
+         is the JSON output from the 'prepare' command.
