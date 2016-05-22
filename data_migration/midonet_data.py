@@ -100,6 +100,17 @@ def _is_neutron_port(port, n_ports):
                                         peer_id in n_ports)
 
 
+def _get_port_links(ports):
+    links = {}
+    for port in ports:
+        peer_id = port.get_peer_id()
+        if peer_id:
+            port_id = port.get_id()
+            if port_id not in links:
+                links[peer_id] = port_id
+    return links
+
+
 def _get_objects(f, exclude=None, filter_func=None):
     objs = f()
     if exclude:
@@ -124,9 +135,9 @@ def _to_dto_dict(objs):
     return [o.dto for o in objs]
 
 
-def _create_data(f, obj):
+def _create_data(f, obj, *args):
     try:
-        return f()
+        return f(*args)
     except wexc.HTTPClientError as e:
         if e.code == wexc.HTTPConflict.code:
             LOG.warn("Already exists: " + str(obj))
@@ -266,6 +277,7 @@ class DataReader(object):
             "port_groups": _to_dto_dict(port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
             "ports": _to_dto_dict(ports),
+            "port_links": _get_port_links(ports),
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
         }
@@ -435,6 +447,15 @@ class DataWriter(object):
             results[pid] = _create_data(f, port)
         return results
 
+    def _link_ports(self, links, ports):
+        for port_id, peer_id in iter(links.items()):
+            LOG.debug("Linking ports " + str(port_id) + " and " + str(peer_id))
+            if not self.dry_run:
+                port = _get_obj(self.mc.mn_api.get_port, port_id,
+                                cache_map=ports)
+                _create_data(self.mc.mn_api.link, (port_id, peer_id), port,
+                             peer_id)
+
     def _create_ip_addr_groups(self, ip_addr_groups):
         for ip_addr_group in ip_addr_groups:
             LOG.debug("Creating IP address group " + str(ip_addr_group))
@@ -536,7 +557,8 @@ class DataWriter(object):
                            "hosts"; [{"name": String,
                                       "ipAddr": String,
                                       "macAddr": String}, ...]
-                          ], ...}, ...
+                          ], ...}, ...,
+         "port_links": {UUID [Port ID]: UUID [PeerPort ID]}
         }
         """
         LOG.info('Running MidoNet migration process')
@@ -551,5 +573,6 @@ class DataWriter(object):
 
         # Sub-resources
         self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
-        self._create_ports(mido_data['ports'], bridges, routers)
+        ports = self._create_ports(mido_data['ports'], bridges, routers)
+        self._link_ports(mido_data['port_links'], ports)
         self._bind_hosts(mido_data['host_bindings'])
