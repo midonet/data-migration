@@ -228,7 +228,7 @@ class DataReader(object):
         ip_addr_groups = _get_objects(
             self.mc.mn_api.get_ip_addr_groups,
             exclude=self._neutron_ids("security-groups"))
-
+        port_groups = _get_objects(self.mc.mn_api.get_port_groups)
         tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
         hosts = _get_objects(self.mc.mn_api.get_hosts)
         host2tz_map = _convert_to_host2tz_map(tzs)
@@ -239,6 +239,7 @@ class DataReader(object):
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
+            "port_groups": _to_dto_dict(port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
             "ports": _to_dto_dict(ports),
             "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
@@ -379,6 +380,16 @@ class DataWriter(object):
                         .create)
             self._create_data("ip address group", f, ip_addr_group)
 
+    def _create_port_groups(self, port_groups):
+        for port_group in port_groups:
+            f = (self.mc.mn_api.add_port_group()
+                        .id(port_group['id'])
+                        .name(port_group['name'])
+                        .tenant_id(port_group['tenantId'])
+                        .stateful(port_group['stateful'])
+                        .create)
+            self._create_data("port group", f, port_group)
+
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
             f = (self.mc.mn_api.add_tunnel_zone()
@@ -433,7 +444,11 @@ class DataWriter(object):
                        "portMac": <port_mac>,
                        "type": <type>}, ...],
             "ip_addr_groups": [{"id": <ip_addr_group_id>,
-                                "name": <ip_addr_group_name>}, ...]
+                                "name": <ip_addr_group_name>}, ...],
+            "port_groups": [{"id": <port_group_id>,
+                             "name": <port_group_name>,
+                             "tenantId": <tenant_id>,
+                             "stateful": <stateful>}, ...]
         }
         """
         LOG.info('Running MidoNet migration process')
@@ -444,5 +459,6 @@ class DataWriter(object):
         bridges = self._create_bridges(mido_data['bridges'])
         routers = self._create_routers(mido_data['routers'])
         self._create_ip_addr_groups(mido_data['ip_addr_groups'])
+        self._create_port_groups(mido_data['port_groups'])
         self._create_ports(mido_data['ports'], bridges, routers)
         self._bind_hosts(mido_data['host_bindings'])
