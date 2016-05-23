@@ -228,6 +228,25 @@ class DataReader(object):
                                   "interface": port.get_interface_name()})
         return port_list
 
+    def _convert_to_port_group_port_map(self, port_groups):
+        pgp_map = {}
+
+        def _filter_pr_ports(objs):
+            pr_port_ids = [p.get_id() for p in self._provider_router_ports]
+            return [o for o in objs if o.get_port_id() not in pr_port_ids]
+
+        def _extract_port_id(o):
+            return o['portId']
+
+        for port_group in port_groups:
+            pg_ports = _get_objects(port_group.get_ports,
+                                    filter_func=_filter_pr_ports)
+            if pg_ports:
+                pgp_map[port_group.get_id()] = _to_dto_dict(
+                    pg_ports, modify=_extract_port_id)
+
+        return pgp_map
+
     def _prepare_host_bindings(self, hosts, host2tz_map):
         """Prepare the host bindings data
 
@@ -308,6 +327,8 @@ class DataReader(object):
             "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
                 ip_addr_groups),
             "port_groups": _to_dto_dict(port_groups),
+            "port_group_ports": self._convert_to_port_group_port_map(
+                port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
             "ports": _to_dto_dict(ports),
             "port_links": _get_port_links(ports),
@@ -524,16 +545,34 @@ class DataWriter(object):
                 _create_data(f, addr)
 
     def _create_port_groups(self, port_groups):
+        results = {}
         for port_group in port_groups:
             LOG.debug("Creating port group " + str(port_group))
+            pg_id = port_group['id']
             f = (self.mc.mn_api.add_port_group()
-                        .id(port_group['id'])
+                        .id(pg_id)
                         .name(port_group['name'])
                         .tenant_id(port_group['tenantId'])
                         .stateful(port_group['stateful'])
                         .create)
             if not self.dry_run:
-                _create_data(f, port_group)
+                results[pg_id] = _create_data(f, port_group)
+        return results
+
+    def _create_port_group_ports(self, port_group_ports, port_groups):
+        for pg_id, pg_port_ids in iter(port_group_ports.items()):
+            for pg_port_id in pg_port_ids:
+                LOG.debug("Creating port group port " + str(pg_port_id) +
+                          " for port group " + pg_id)
+                if self.dry_run:
+                    continue
+
+                # Putting this here instead of outside this loop only so that
+                # dry-run does not crap out.
+                pg = _get_obj(self.mc.mn_api.get_port_group, pg_id,
+                              cache_map=port_groups)
+                f = pg.add_port_group_port().port_id(pg_port_id).create
+                _create_data(f, (pg_id, pg_port_id))
 
     def _create_tunnel_zones(self, tzs):
         for tz in tzs:
@@ -601,6 +640,8 @@ class DataWriter(object):
                           "name": String,
                           "tenantId": String,
                           "stateful": Bool, ...],
+         "port_group_ports": {UUID (Port group ID):
+                              [UUID (Port ID)]}, ...
          "dhcp_subnets": {UUID (Bridge Id):
                           [{"subnet":
                             {"defaultGateway": String,
@@ -630,12 +671,14 @@ class DataWriter(object):
         routers = self._create_routers(mido_data['routers'])
         ip_addr_groups = self._create_ip_addr_groups(
             mido_data['ip_addr_groups'])
-        self._create_port_groups(mido_data['port_groups'])
+        port_groups = self._create_port_groups(mido_data['port_groups'])
 
         # Sub-resources
         self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
         self._create_ip_addr_group_addrs(mido_data['ip_addr_group_addrs'],
                                          ip_addr_groups)
         ports = self._create_ports(mido_data['ports'], bridges, routers)
+        self._create_port_group_ports(mido_data['port_group_ports'],
+                                      port_groups)
         self._link_ports(mido_data['port_links'], ports)
         self._bind_hosts(mido_data['host_bindings'])
