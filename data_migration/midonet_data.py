@@ -16,6 +16,7 @@
 from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
+from data_migration import utils
 import logging
 from webob import exc as wexc
 
@@ -194,12 +195,15 @@ class DataReader(object):
                       str(self._provider_router_ports))
         return self._provider_router
 
-    def _is_provider_router_port_or_peer_port(self, port):
+    @property
+    def _provider_router_ports_or_peer_ports(self):
         pr_ports = [p.get_id() for p in self._provider_router_ports]
         pr_peer_ports = [p.get_peer_id() for p in self._provider_router_ports
                          if p.get_peer_id()]
-        ports = set(pr_ports + pr_peer_ports)
-        return port.get_id() in ports
+        return set(pr_ports + pr_peer_ports)
+
+    def _is_provider_router_port_or_peer_port(self, port):
+        return port.get_id() in self._provider_router_ports_or_peer_ports
 
     def _port_filter(self, ports):
         """We want to exclude the following ports:
@@ -246,6 +250,25 @@ class DataReader(object):
                     pg_ports, modify=_extract_port_id)
 
         return pgp_map
+
+    def _convert_to_rule_map(self, chains):
+        rule_map = {}
+
+        def _filter_pr_ports(objs):
+            # Filters out rules that reference any port on the provider router
+            # or their peers.
+            pr_port_ids = self._provider_router_ports_or_peer_ports
+            return [o for o in objs
+                    if not (utils.intersect(o.get_in_ports(), pr_port_ids) or
+                            utils.intersect(o.get_out_ports(), pr_port_ids))]
+
+        for chain in chains:
+            rules = _get_objects(chain.get_rules,
+                                 filter_func=_filter_pr_ports)
+            if rules:
+                rule_map[chain.get_id()] = _to_dto_dict(rules)
+
+        return rule_map
 
     def _prepare_host_bindings(self, hosts, host2tz_map):
         """Prepare the host bindings data
@@ -323,6 +346,7 @@ class DataReader(object):
             "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
+            "rules": self._convert_to_rule_map(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
             "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
                 ip_addr_groups),
@@ -384,15 +408,77 @@ class DataWriter(object):
         return results
 
     def _create_chains(self, chains):
+        results = {}
         for chain in chains:
             LOG.debug("Creating chain " + str(chain))
+            chain_id = chain['id']
             f = (self.mc.mn_api.add_chain()
-                        .id(chain['id'])
+                        .id(chain_id)
                         .name(chain['name'])
                         .tenant_id(chain['tenantId'])
                         .create)
             if not self.dry_run:
-                _create_data(f, chain)
+                results[chain_id] = _create_data(f, chain)
+        return results
+
+    def _create_rules(self, chain_rules, chains):
+        for chain_id, rules in iter(chain_rules.items()):
+            for rule in rules:
+                LOG.debug("Creating rule " + str(rule) +
+                          " on chain " + chain_id)
+                if self.dry_run:
+                    continue
+
+                # TODO(RYU): Trace req?
+                chain = _get_obj(self.mc.mn_api.get_chain, chain_id,
+                                 cache_map=chains)
+                f = (chain.add_rule()
+                     .id(rule['id'])
+                     .chain_id(chain_id)
+                     .jump_chain_name(rule.get('jumpChainName'))
+                     .jump_chain_id(rule.get('jumpChainName'))
+                     .nat_targets(rule.get('natTargets'))
+                     .type(rule['type'])
+                     .flow_action(rule.get('flowAction'))
+                     .cond_invert(rule['condInvert'])
+                     .match_forward_flow(rule['matchForwardFlow'])
+                     .match_return_flow(rule['matchReturnFlow'])
+                     .port_group(rule['portGroup'])
+                     .inv_port_group(rule['invPortGroup'])
+                     .ip_addr_group_dst(rule['ipAddrGroupDst'])
+                     .inv_ip_addr_group_dst(rule['invIpAddrGroupDst'])
+                     .ip_addr_group_src(rule['ipAddrGroupSrc'])
+                     .inv_ip_addr_group_src(rule['invIpAddrGroupSrc'])
+                     .tp_dst(rule['tpDst'])
+                     .inv_tp_dst(rule['invTpDst'])
+                     .tp_src(rule['tpSrc'])
+                     .inv_tp_src(rule['invTpSrc'])
+                     .dl_dst(rule['dlDst'])
+                     .inv_dl_dst(rule['invDlDst'])
+                     .dl_src(rule['dlSrc'])
+                     .inv_dl_src(rule['invDlSrc'])
+                     .dl_dst_mask(rule['dlDstMask'])
+                     .dl_src_mask(rule['dlSrcMask'])
+                     .nw_dst_address(rule['nwDstAddress'])
+                     .nw_dst_length(rule['nwDstLength'])
+                     .inv_nw_dst(rule['invNwDst'])
+                     .nw_src_address(rule['nwSrcAddress'])
+                     .nw_src_length(rule['nwSrcLength'])
+                     .inv_nw_src(rule['invNwSrc'])
+                     .in_ports(rule['inPorts'])
+                     .inv_in_ports(rule['invInPorts'])
+                     .out_ports(rule['outPorts'])
+                     .inv_out_ports(rule['invOutPorts'])
+                     .dl_type(rule['dlType'])
+                     .inv_dl_type(rule['invDlType'])
+                     .nw_tos(rule['nwTos'])
+                     .inv_nw_tos(rule['invNwTos'])
+                     .nw_proto(rule['nwProto'])
+                     .inv_nw_proto(rule['invNwProto'])
+                     .fragment_policy(rule['fragmentPolicy']).create)
+
+                if not self.dry_run:
+                    _create_data(f, rule)
 
     def _create_bridges(self, bridges):
         results = {}
@@ -613,6 +699,55 @@ class DataWriter(object):
          "chains": [{"id": UUID,
                      "name": String,
                      "tenantId": String}, ...],
+         "rules": {UUID (Chain ID):
+                   [{"id": UUID,
+                     "jumpChainName": String,
+                     "jumpChainId": UUID,
+                     "natTargets": [{"addressFrom": String,
+                                     "addressTo": String,
+                                     "portFrom": Int,
+                                     "portTo": Int}, ...],
+                     "type": String,
+                     "flowAction": String,
+                     "requestId": UUID,
+                     "limit": Int,
+                     "condInvert": Bool,
+                     "invDlDst": Bool,
+                     "invDlSrc": Bool,
+                     "invDlType": Bool,
+                     "invInPorts": Bool,
+                     "invOutPorts": Bool,
+                     "invNwDst": Bool,
+                     "invNwProto": Bool,
+                     "invNwSrc": Bool,
+                     "invNwTos": Bool,
+                     "invPortGroup": Bool,
+                     "invIpAddrGroupDst": Bool,
+                     "invIpAddrGroupSrc": Bool,
+                     "invTpDst": Bool,
+                     "invTpSrc": Bool,
+                     "matchForwardFlow": Bool,
+                     "matchReturnFlow": Bool,
+                     "dlDst": String,
+                     "dlDstMask": String,
+                     "dlSrc": String,
+                     "dlSrcMask": String,
+                     "dlType": String,
+                     "inPorts": [UUID (Port ID)],
+                     "outPorts": [UUID (Port ID)],
+                     "nwDstAddress": String,
+                     "nwDstLength": Int,
+                     "nwProto": Int,
+                     "nwSrcAddress": String,
+                     "nwSrcLength": Int,
+                     "nwTos": String,
+                     "portGroup": UUID,
+                     "ipAddrGroupDst": String,
+                     "ipAddrGroupSrc": String,
+                     "tpSrc": String,
+                     "tpDst": String,
+                     "fragmentPolicy": String
+                    }, ...]}, ...,
          "bridges": [{"id": UUID,
                       "name": String,
                       "tenantId": String,
@@ -672,7 +807,7 @@ class DataWriter(object):
         mido_data = self.data['midonet']
         hosts = self._create_hosts(mido_data['hosts'])
         tunnel_zones = self._create_tunnel_zones(mido_data["tunnel_zones"])
-        self._create_chains(mido_data['chains'])
+        chains = self._create_chains(mido_data['chains'])
         bridges = self._create_bridges(mido_data['bridges'])
         routers = self._create_routers(mido_data['routers'])
         ip_addr_groups = self._create_ip_addr_groups(
@@ -686,5 +821,6 @@ class DataWriter(object):
         ports = self._create_ports(mido_data['ports'], bridges, routers)
         self._create_port_group_ports(mido_data['port_group_ports'],
                                       port_groups)
+        self._create_rules(mido_data['rules'], chains)
         self._link_ports(mido_data['port_links'], ports)
         self._bind_hosts(mido_data['host_bindings'], hosts, tunnel_zones)
