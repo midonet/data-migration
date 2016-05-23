@@ -66,18 +66,13 @@ def _chain_filter(chains):
     return [c for c in chains if not _is_neutron_chain(c)]
 
 
-def _convert_to_host2tz_map(tzs):
-    host2tz = {}
+def _convert_to_tz_host_map(tzs):
+    tz_host_map = {}
     for tz in tzs:
         tzhs = tz.get_hosts()
-        for tzh in tzhs:
-            hid = tzh.get_host_id()
-            if hid not in host2tz:
-                host2tz[hid] = []
-            host2tz[hid].append(
-                {"id": tzh.get_tunnel_zone_id(),
-                 "ip_address": tzh.get_ip_address()})
-    return host2tz
+        if tzhs:
+            tz_host_map[tz.get_id()] = _to_dto_dict(tzhs)
+    return tz_host_map
 
 
 def _convert_to_bridge_to_dhcp_subnet_map(bridges):
@@ -217,20 +212,21 @@ class DataReader(object):
             self._is_provider_router_port_or_peer_port(p)
             or _is_neutron_port(p, n_ports))]
 
-    def _get_host_ports(self, host, pr_id):
-        port_list = []
-        ports = host.get_ports()
+    def _convert_to_host_interface_port_map(self, hosts):
+        host_interface_port_map = {}
 
-        # Skip ports for health monitors
-        for port in [p for p in ports
-                     if not _is_lb_hm_interface(p.get_interface_name())]:
-            port_obj = self.mc.mn_api.get_port(port.get_port_id())
+        def _filter_ports(objs):
+            pr_port_ids = [p.get_id() for p in self._provider_router_ports]
+            return [o for o in objs if not (o.get_port_id() in pr_port_ids or
+                                            _is_lb_hm_interface(
+                                                o.get_interface_name()))]
 
-            # Skip port bindings for external routers (provider router)
-            if port_obj.get_device_id() != pr_id:
-                port_list.append({"id": port_obj.get_id(),
-                                  "interface": port.get_interface_name()})
-        return port_list
+        for host in hosts:
+            hiports = _get_objects(host.get_ports,
+                                   filter_func=_filter_ports)
+            if hiports:
+                host_interface_port_map[host.get_id()] = _to_dto_dict(hiports)
+        return host_interface_port_map
 
     def _convert_to_port_group_port_map(self, port_groups):
         pgp_map = {}
@@ -269,25 +265,6 @@ class DataReader(object):
                 rule_map[chain.get_id()] = _to_dto_dict(rules)
 
         return rule_map
-
-    def _prepare_host_bindings(self, hosts, host2tz_map):
-        """Prepare the host bindings data
-
-        The last step in the migration process is updating port bindings
-        and host-tz memberships.  By the time this data is used, tunnel zones
-        and ports should be already created.
-        """
-        bindings_map = {}
-        pr = self.provider_router
-        for h in hosts:
-            hid = h.get_id()
-            bindings_map[hid] = {
-                "name": h.get_name(),
-                "tunnel_zones": host2tz_map[hid],
-                "ports": self._get_host_ports(h, pr.get_id())
-            }
-
-        return bindings_map
 
     def _prepare_provider_router(self, host_id2name_map):
         """Prepares the data required for provider router migration
@@ -338,10 +315,11 @@ class DataReader(object):
         port_groups = _get_objects(self.mc.mn_api.get_port_groups)
         tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
         hosts = _get_objects(self.mc.mn_api.get_hosts)
-        host2tz_map = _convert_to_host2tz_map(tzs)
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
             "hosts": _to_dto_dict(hosts),
+            "host_interface_ports": self._convert_to_host_interface_port_map(
+                hosts),
             "bridges": _to_dto_dict(bridges),
             "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
@@ -354,9 +332,9 @@ class DataReader(object):
             "port_group_ports": self._convert_to_port_group_port_map(
                 port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
+            "tunnel_zone_hosts": _convert_to_tz_host_map(tzs),
             "ports": _to_dto_dict(ports),
             "port_links": _get_port_links(ports),
-            "host_bindings": self._prepare_host_bindings(hosts, host2tz_map),
             "provider_router": self._prepare_provider_router(host_name_map)
         }
 
@@ -367,32 +345,6 @@ class DataWriter(object):
         self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
-
-    def _bind_hosts(self, bindings, hosts, tunnel_zones):
-        for hid, h in iter(bindings.items()):
-            tzhs = h["tunnel_zones"]
-            for tzh in tzhs:
-                LOG.debug("Binding host tz: " + str(tzh))
-                if self.dry_run:
-                    continue
-
-                tz = _get_obj(self.mc.mn_api.get_tunnel_zone, tzh['id'],
-                              cache_map=tunnel_zones)
-                f = (tz.add_tunnel_zone_host()
-                     .ip_address(tzh['ip_address'])
-                     .host_id(hid).create)
-                _create_data(f, tzh)
-
-            ports = h["ports"]
-            for p in ports:
-                LOG.debug("Binding port host intf: " + str(p))
-                if self.dry_run:
-                    continue
-
-                host = _get_obj(self.mc.mn_api.get_host, hid, cache_map=hosts)
-                f = self.mc.mn_api.add_host_interface_port
-                _create_data(f, p, host, port_id=p["id"],
-                             interface_name=p["interface"])
 
     def _create_hosts(self, hosts):
         results = {}
@@ -406,6 +358,21 @@ class DataWriter(object):
             if not self.dry_run:
                 results[hid] = _create_data(f, h)
         return results
+
+    def _create_host_interface_ports(self, host_interface_ports, hosts):
+        for host_id, hiports in iter(host_interface_ports.items()):
+            for hiport in hiports:
+                LOG.debug("Creating host interface port " + str(hiport))
+                if self.dry_run:
+                    continue
+
+                host = _get_obj(self.mc.mn_api.get_host, host_id,
+                                cache_map=hosts)
+                f = (host.add_host_interface_port()
+                     .port_id(hiport['portId'])
+                     .interface_name(hiport['interfaceName'])
+                     .create)
+                _create_data(f, hiport)
 
     def _create_chains(self, chains):
         results = {}
@@ -677,6 +644,21 @@ class DataWriter(object):
                 results[tz_id] = _create_data(f, tz)
         return results
 
+    def _create_tunnel_zone_hosts(self, tunnel_zone_hosts, tunnel_zones):
+        for tz_id, tzhs in iter(tunnel_zone_hosts.items()):
+            for tzh in tzhs:
+                LOG.debug("Creating tunnzel zone host " + str(tzh))
+                if self.dry_run:
+                    continue
+
+                tz = _get_obj(self.mc.mn_api.get_tunnel_zone, tz_id,
+                              cache_map=tunnel_zones)
+                f = (tz.add_tunnel_zone_host()
+                     .host_id(tzh['hostId'])
+                     .ip_address(tzh['ipAddress'])
+                     .create)
+                _create_data(f, tzh)
+
     def migrate(self):
         """Create all the midonet objects
 
@@ -685,17 +667,15 @@ class DataWriter(object):
         {
          "hosts": [{"id": UUID,
                     "name": String}, ...],
+         "host_interface_ports": {UUID (Host ID):
+                                  [{"portId": UUID,
+                                    "interfaceName": String}, ...]}, ...,
          "tunnel_zones": [{"id": UUID,
                            "type": String,
                            "name": String}, ...],
-         "host_bindings": {UUID (host ID):
-                            {"name": String,
-                             "ports": [{"id": UUID,
-                                        "interface": String}, ...],
-                             "tunnel_zones": [{"id": UUID,
-                                               "ip_address": String}, ...]
-                            }
-                           }, ...,
+         "tunnel_zone_hosts": {UUID (Tunnel Zone ID):
+                               [{"hostId": UUID,
+                                 "ipAddress": String}, ...]}, ...
          "chains": [{"id": UUID,
                      "name": String,
                      "tenantId": String}, ...],
@@ -823,4 +803,9 @@ class DataWriter(object):
                                       port_groups)
         self._create_rules(mido_data['rules'], chains)
         self._link_ports(mido_data['port_links'], ports)
-        self._bind_hosts(mido_data['host_bindings'], hosts, tunnel_zones)
+
+        # Host Bindings
+        self._create_tunnel_zone_hosts(mido_data['tunnel_zone_hosts'],
+                                       tunnel_zones)
+        self._create_host_interface_ports(mido_data['host_interface_ports'],
+                                          hosts)
