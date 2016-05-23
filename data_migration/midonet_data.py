@@ -16,7 +16,6 @@
 from data_migration import constants as const
 from data_migration import context
 from data_migration import exceptions as exc
-from data_migration import utils
 import logging
 from webob import exc as wexc
 
@@ -75,6 +74,30 @@ def _convert_to_tz_host_map(tzs):
     return tz_host_map
 
 
+def _convert_to_host_interface_port_map(hosts):
+    host_interface_port_map = {}
+    for host in hosts:
+        hiports = _get_objects(host.get_ports)
+        if hiports:
+            host_interface_port_map[host.get_id()] = _to_dto_dict(hiports)
+    return host_interface_port_map
+
+
+def _convert_to_port_group_port_map(port_groups):
+    pgp_map = {}
+
+    def _extract_port_id(o):
+        return o['portId']
+
+    for port_group in port_groups:
+        pg_ports = _get_objects(port_group.get_ports)
+        if pg_ports:
+            pgp_map[port_group.get_id()] = _to_dto_dict(
+                pg_ports, modify=_extract_port_id)
+
+    return pgp_map
+
+
 def _convert_to_bridge_to_dhcp_subnet_map(bridges):
     subnet_map = {}
     for bridge in bridges:
@@ -106,6 +129,16 @@ def _convert_to_ip_addr_group_addr_map(ip_addr_groups):
             addr_map[ip_addr_group.get_id()] = _to_dto_dict(addrs,
                                                             modify=_to_ipv4)
     return addr_map
+
+
+def _convert_to_rule_map(chains):
+    rule_map = {}
+    for chain in chains:
+        rules = _get_objects(chain.get_rules)
+        if rules:
+            rule_map[chain.get_id()] = _to_dto_dict(rules)
+
+    return rule_map
 
 
 def _is_neutron_port(port, n_ports):
@@ -190,81 +223,14 @@ class DataReader(object):
                       str(self._provider_router_ports))
         return self._provider_router
 
-    @property
-    def _provider_router_ports_or_peer_ports(self):
-        pr_ports = [p.get_id() for p in self._provider_router_ports]
-        pr_peer_ports = [p.get_peer_id() for p in self._provider_router_ports
-                         if p.get_peer_id()]
-        return set(pr_ports + pr_peer_ports)
-
-    def _is_provider_router_port_or_peer_port(self, port):
-        return port.get_id() in self._provider_router_ports_or_peer_ports
-
     def _port_filter(self, ports):
         """We want to exclude the following ports:
 
         1. ID matching one of the neutron port IDs
         2. Peer ID, if present, matching one of Neutron port IDs
-        3. Provider router ports and their peers
         """
         n_ports = self._neutron_ids("ports")
-        return [p for p in ports if not (
-            self._is_provider_router_port_or_peer_port(p)
-            or _is_neutron_port(p, n_ports))]
-
-    def _convert_to_host_interface_port_map(self, hosts):
-        host_interface_port_map = {}
-
-        def _filter_ports(objs):
-            pr_port_ids = [p.get_id() for p in self._provider_router_ports]
-            return [o for o in objs if not (o.get_port_id() in pr_port_ids or
-                                            _is_lb_hm_interface(
-                                                o.get_interface_name()))]
-
-        for host in hosts:
-            hiports = _get_objects(host.get_ports,
-                                   filter_func=_filter_ports)
-            if hiports:
-                host_interface_port_map[host.get_id()] = _to_dto_dict(hiports)
-        return host_interface_port_map
-
-    def _convert_to_port_group_port_map(self, port_groups):
-        pgp_map = {}
-
-        def _filter_pr_ports(objs):
-            pr_port_ids = [p.get_id() for p in self._provider_router_ports]
-            return [o for o in objs if o.get_port_id() not in pr_port_ids]
-
-        def _extract_port_id(o):
-            return o['portId']
-
-        for port_group in port_groups:
-            pg_ports = _get_objects(port_group.get_ports,
-                                    filter_func=_filter_pr_ports)
-            if pg_ports:
-                pgp_map[port_group.get_id()] = _to_dto_dict(
-                    pg_ports, modify=_extract_port_id)
-
-        return pgp_map
-
-    def _convert_to_rule_map(self, chains):
-        rule_map = {}
-
-        def _filter_pr_ports(objs):
-            # Filters out rules that reference any port on the provider router
-            # or their peers.
-            pr_port_ids = self._provider_router_ports_or_peer_ports
-            return [o for o in objs
-                    if not (utils.intersect(o.get_in_ports(), pr_port_ids) or
-                            utils.intersect(o.get_out_ports(), pr_port_ids))]
-
-        for chain in chains:
-            rules = _get_objects(chain.get_rules,
-                                 filter_func=_filter_pr_ports)
-            if rules:
-                rule_map[chain.get_id()] = _to_dto_dict(rules)
-
-        return rule_map
+        return [p for p in ports if not (_is_neutron_port(p, n_ports))]
 
     def _prepare_provider_router(self, host_id2name_map):
         """Prepares the data required for provider router migration
@@ -314,19 +280,17 @@ class DataReader(object):
         host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
             "hosts": _to_dto_dict(hosts),
-            "host_interface_ports": self._convert_to_host_interface_port_map(
-                hosts),
+            "host_interface_ports": _convert_to_host_interface_port_map(hosts),
             "bridges": _to_dto_dict(bridges),
             "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
-            "rules": self._convert_to_rule_map(chains),
+            "rules": _convert_to_rule_map(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
             "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
                 ip_addr_groups),
             "port_groups": _to_dto_dict(port_groups),
-            "port_group_ports": self._convert_to_port_group_port_map(
-                port_groups),
+            "port_group_ports": _convert_to_port_group_port_map(port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
             "tunnel_zone_hosts": _convert_to_tz_host_map(tzs),
             "ports": _to_dto_dict(ports),
@@ -346,6 +310,19 @@ class DataWriter(object):
     def _provider_router_id(self):
         return self.data['midonet']['provider_router']['id']
 
+    @property
+    def _provider_router_ports(self):
+        ports = self.data['midonet']['ports']
+        return [p for p in ports if (p['deviceId'] ==
+                                     self._provider_router_id)]
+
+    @property
+    def _provider_router_port_and_peer_port_ids(self):
+        pr_port_ids = [p['id'] for p in self._provider_router_ports]
+        pr_peer_port_ids = [p['peerId'] for p in self._provider_router_ports
+                            if p['peerId']]
+        return set(pr_port_ids + pr_peer_port_ids)
+
     def _create_hosts(self, hosts):
         results = {}
         for h in hosts:
@@ -359,9 +336,20 @@ class DataWriter(object):
                 results[hid] = _create_data(f, h)
         return results
 
-    def _create_host_interface_ports(self, host_interface_ports, hosts):
+    def _create_host_interface_ports(self, host_interface_ports, hosts, ports):
+        port_ids = ports.keys()
         for host_id, hiports in iter(host_interface_ports.items()):
             for hiport in hiports:
+                port_id = hiport['portId']
+                interface_name = hiport['interfaceName']
+                if port_id not in port_ids:
+                    LOG.debug("Skipping binding " + str(hiport))
+                    continue
+
+                if _is_lb_hm_interface(interface_name):
+                    LOG.debug("Skipping HM port binding " + str(hiport))
+                    continue
+
                 LOG.debug("Creating host interface port " + str(hiport))
                 if self.dry_run:
                     continue
@@ -369,8 +357,8 @@ class DataWriter(object):
                 host = _get_obj(self.mc.mn_api.get_host, host_id,
                                 cache_map=hosts)
                 f = (host.add_host_interface_port()
-                     .port_id(hiport['portId'])
-                     .interface_name(hiport['interfaceName'])
+                     .port_id(port_id)
+                     .interface_name(interface_name)
                      .create)
                 _create_data(f, hiport)
 
@@ -388,11 +376,21 @@ class DataWriter(object):
                 results[chain_id] = _create_data(f, chain)
         return results
 
-    def _create_rules(self, chain_rules, chains):
+    def _create_rules(self, chain_rules, chains, ports):
+        port_ids = ports.keys()
         for chain_id, rules in iter(chain_rules.items()):
             for rule in rules:
-                LOG.debug("Creating rule " + str(rule) +
-                          " on chain " + chain_id)
+                if not set(rule['inPorts']).issubset(port_ids):
+                    LOG.debug("Skipping rule with unknown inport " + str(rule))
+                    continue
+
+                if not set(rule['outPorts']).issubset(port_ids):
+                    LOG.debug("Skipping rule with unknown outport " +
+                              str(rule))
+                    continue
+
+                LOG.debug("Creating rule " + str(rule) + " on chain " +
+                          chain_id)
                 if self.dry_run:
                     continue
 
@@ -519,14 +517,19 @@ class DataWriter(object):
 
     def _create_ports(self, ports, bridges, routers):
         results = {}
+        pr_port_ids = self._provider_router_port_and_peer_port_ids
         for port in ports:
+            pid = port['id']
+            if pid in pr_port_ids:
+                LOG.debug("Skipping provider router port/peer " + str(port))
+                continue
+
             LOG.debug("Creating port " + str(port))
             if self.dry_run:
                 continue
 
             ptype = port['type']
             device_id = port['deviceId']
-            pid = port['id']
             if ptype == const.BRG_PORT_TYPE:
                 bridge = _get_obj(self.mc.mn_api.get_bridge, device_id,
                                   cache_map=bridges)
@@ -562,8 +565,14 @@ class DataWriter(object):
         return results
 
     def _link_ports(self, links, ports):
+        port_ids = ports.keys()
         for port_id, peer_id in iter(links.items()):
-            LOG.debug("Linking ports " + str(port_id) + " and " + str(peer_id))
+            link = (port_id, peer_id)
+            if not (port_id in port_ids or peer_id in port_ids):
+                LOG.debug("Skipping linking " + str(link))
+                continue
+
+            LOG.debug("Linking ports " + str(link))
             if not self.dry_run:
                 port = _get_obj(self.mc.mn_api.get_port, port_id,
                                 cache_map=ports)
@@ -619,9 +628,14 @@ class DataWriter(object):
                 results[pg_id] = _create_data(f, port_group)
         return results
 
-    def _create_port_group_ports(self, port_group_ports, port_groups):
+    def _create_port_group_ports(self, port_group_ports, port_groups, ports):
+        port_ids = ports.keys()
         for pg_id, pg_port_ids in iter(port_group_ports.items()):
             for pg_port_id in pg_port_ids:
+                if pg_port_id not in port_ids:
+                    LOG.debug("Skipping port group port " + str(pg_port_id))
+                    continue
+
                 LOG.debug("Creating port group port " + str(pg_port_id) +
                           " for port group " + pg_id)
                 if self.dry_run:
@@ -804,12 +818,12 @@ class DataWriter(object):
                                          ip_addr_groups)
         ports = self._create_ports(mido_data['ports'], bridges, routers)
         self._create_port_group_ports(mido_data['port_group_ports'],
-                                      port_groups)
-        self._create_rules(mido_data['rules'], chains)
+                                      port_groups, ports)
+        self._create_rules(mido_data['rules'], chains, ports)
         self._link_ports(mido_data['port_links'], ports)
 
         # Host Bindings
         self._create_tunnel_zone_hosts(mido_data['tunnel_zone_hosts'],
                                        tunnel_zones)
         self._create_host_interface_ports(mido_data['host_interface_ports'],
-                                          hosts)
+                                          hosts, ports)

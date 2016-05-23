@@ -14,11 +14,6 @@
 #    under the License.
 
 
-def intersect(a, b):
-    """return the intersection of two lists"""
-    return list(set(a) & set(b))
-
-
 class QueryFilter(object):
 
     def func_filter(self):
