@@ -344,41 +344,44 @@ class DataWriter(object):
         self.data = data
         self.dry_run = dry_run
 
-    def _bind_hosts(self, bindings):
+    def _bind_hosts(self, bindings, hosts, tunnel_zones):
         for hid, h in iter(bindings.items()):
             tzhs = h["tunnel_zones"]
             for tzh in tzhs:
-                LOG.debug("Binding host tz: " + str(tzh) + ", " + str(h))
-                if not self.dry_run:
-                    tz = self.mc.mn_api.get_tunnel_zone(tzh['id'])
-                    f = (tz.add_tunnel_zone_host()
-                         .ip_address(tzh['ip_address'])
-                         .host_id(hid).create)
-                    _create_data(f, tzh)
+                LOG.debug("Binding host tz: " + str(tzh))
+                if self.dry_run:
+                    continue
 
-            if self.dry_run:
-                host = {"id": "fake_host"}
-            else:
-                host = self.mc.mn_api.get_host(hid)
+                tz = _get_obj(self.mc.mn_api.get_tunnel_zone, tzh['id'],
+                              cache_map=tunnel_zones)
+                f = (tz.add_tunnel_zone_host()
+                     .ip_address(tzh['ip_address'])
+                     .host_id(hid).create)
+                _create_data(f, tzh)
 
             ports = h["ports"]
             for p in ports:
-                LOG.debug("Binding port host intf: " + str(p) + ", " +
-                          str(host))
-                if not self.dry_run:
-                    f = self.mc.mn_api.add_host_interface_port
-                    _create_data(f, p, host, port_id=p["id"],
-                                 interface_name=p["interface"])
+                LOG.debug("Binding port host intf: " + str(p))
+                if self.dry_run:
+                    continue
+
+                host = _get_obj(self.mc.mn_api.get_host, hid, cache_map=hosts)
+                f = self.mc.mn_api.add_host_interface_port
+                _create_data(f, p, host, port_id=p["id"],
+                             interface_name=p["interface"])
 
     def _create_hosts(self, hosts):
+        results = {}
         for h in hosts:
             LOG.debug("Creating host " + str(h))
+            hid = h['id']
             f = (self.mc.mn_api.add_host()
-                               .id(h['id'])
+                               .id(hid)
                                .name(h['name'])
                                .create)
             if not self.dry_run:
-                _create_data(f, h)
+                results[hid] = _create_data(f, h)
+        return results
 
     def _create_chains(self, chains):
         for chain in chains:
@@ -575,15 +578,18 @@ class DataWriter(object):
                 _create_data(f, (pg_id, pg_port_id))
 
     def _create_tunnel_zones(self, tzs):
+        results = {}
         for tz in tzs:
             LOG.debug("Creating tunnel zone " + str(tz))
+            tz_id = tz['id']
             f = (self.mc.mn_api.add_tunnel_zone()
-                     .id(tz['id'])
+                     .id(tz_id)
                      .type(tz['type'])
                      .name(tz['name'])
                      .create)
             if not self.dry_run:
-                _create_data(f, tz)
+                results[tz_id] = _create_data(f, tz)
+        return results
 
     def migrate(self):
         """Create all the midonet objects
@@ -664,8 +670,8 @@ class DataWriter(object):
         """
         LOG.info('Running MidoNet migration process')
         mido_data = self.data['midonet']
-        self._create_hosts(mido_data['hosts'])
-        self._create_tunnel_zones(mido_data["tunnel_zones"])
+        hosts = self._create_hosts(mido_data['hosts'])
+        tunnel_zones = self._create_tunnel_zones(mido_data["tunnel_zones"])
         self._create_chains(mido_data['chains'])
         bridges = self._create_bridges(mido_data['bridges'])
         routers = self._create_routers(mido_data['routers'])
@@ -681,4 +687,4 @@ class DataWriter(object):
         self._create_port_group_ports(mido_data['port_group_ports'],
                                       port_groups)
         self._link_ports(mido_data['port_links'], ports)
-        self._bind_hosts(mido_data['host_bindings'])
+        self._bind_hosts(mido_data['host_bindings'], hosts, tunnel_zones)
