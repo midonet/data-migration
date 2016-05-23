@@ -94,6 +94,24 @@ def _convert_to_bridge_to_dhcp_subnet_map(bridges):
     return subnet_map
 
 
+def _convert_to_ip_addr_group_addr_map(ip_addr_groups):
+    addr_map = {}
+
+    def _to_ipv4(o):
+        o['version'] = 4
+        return o
+
+    for ip_addr_group in ip_addr_groups:
+        addrs = ip_addr_group.get_addrs()
+        if addrs:
+            # There seems to be a bug where all IP address group addrs
+            # return as version '6': MI-994.  Since we only support 4,
+            # just always set it to version 4.
+            addr_map[ip_addr_group.get_id()] = _to_dto_dict(addrs,
+                                                            modify=_to_ipv4)
+    return addr_map
+
+
 def _is_neutron_port(port, n_ports):
     peer_id = port.get_peer_id()
     return port.get_id() in n_ports or (peer_id is not None and
@@ -131,8 +149,11 @@ def _get_obj(f, obj_id, cache_map=None):
     return obj
 
 
-def _to_dto_dict(objs):
-    return [o.dto for o in objs]
+def _to_dto_dict(objs, modify=None):
+    if modify:
+        return [modify(o.dto) for o in objs]
+    else:
+        return [o.dto for o in objs]
 
 
 def _create_data(f, obj, *args):
@@ -284,6 +305,8 @@ class DataReader(object):
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
+            "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
+                ip_addr_groups),
             "port_groups": _to_dto_dict(port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
             "ports": _to_dto_dict(ports),
@@ -467,14 +490,38 @@ class DataWriter(object):
                              peer_id)
 
     def _create_ip_addr_groups(self, ip_addr_groups):
+        results = {}
         for ip_addr_group in ip_addr_groups:
             LOG.debug("Creating IP address group " + str(ip_addr_group))
+            ip_addr_group_id = ip_addr_group['id']
             f = (self.mc.mn_api.add_ip_addr_group()
-                        .id(ip_addr_group['id'])
+                        .id(ip_addr_group_id)
                         .name(ip_addr_group['name'])
                         .create)
             if not self.dry_run:
-                _create_data(f, ip_addr_group)
+                results[ip_addr_group_id] = _create_data(f, ip_addr_group)
+        return results
+
+    def _create_ip_addr_group_addrs(self, ip_address_group_addrs,
+                                    ip_addr_groups):
+        for addr_group_id, addrs in iter(ip_address_group_addrs.items()):
+            for addr in addrs:
+                LOG.debug("Creating ip addr group addr " + str(addr) +
+                          " for ip addr group " + addr_group_id)
+                if self.dry_run:
+                    continue
+
+                # Putting this here instead of outside this loop only so that
+                # dry-run does not crap out.
+                iag = _get_obj(self.mc.mn_api.get_ip_addr_group, addr_group_id,
+                               cache_map=ip_addr_groups)
+
+                version = addr['version']
+                if version == 4:
+                    f = iag.add_ipv4_addr().addr(addr['addr']).create
+                else:
+                    f = iag.add_ipv6_addr().addr(addr['addr']).create
+                _create_data(f, addr)
 
     def _create_port_groups(self, port_groups):
         for port_group in port_groups:
@@ -546,7 +593,10 @@ class DataWriter(object):
                     "portMac": String,
                     "type": String}, ...],
          "ip_addr_groups": [{"id": UUID,
-                             "name": String}, ...],
+                             "name": String,}, ...],
+         "ip_addr_group_addrs": {UUID (IP addr group ID):
+                                  [{"addr": String,
+                                    "version": Int}, ...]}, ...,
          "port_groups": [{"id": UUID,
                           "name": String,
                           "tenantId": String,
@@ -578,11 +628,14 @@ class DataWriter(object):
         self._create_chains(mido_data['chains'])
         bridges = self._create_bridges(mido_data['bridges'])
         routers = self._create_routers(mido_data['routers'])
-        self._create_ip_addr_groups(mido_data['ip_addr_groups'])
+        ip_addr_groups = self._create_ip_addr_groups(
+            mido_data['ip_addr_groups'])
         self._create_port_groups(mido_data['port_groups'])
 
         # Sub-resources
         self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
+        self._create_ip_addr_group_addrs(mido_data['ip_addr_group_addrs'],
+                                         ip_addr_groups)
         ports = self._create_ports(mido_data['ports'], bridges, routers)
         self._link_ports(mido_data['port_links'], ports)
         self._bind_hosts(mido_data['host_bindings'])
