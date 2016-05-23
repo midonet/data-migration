@@ -285,6 +285,7 @@ class DataReader(object):
                 ports.append(port)
 
         return {
+            'id': self.provider_router.get_id(),
             'router': {
                 'name': self.provider_router.get_name(),
                 'admin_state_up': self.provider_router.get_admin_state_up()
@@ -295,18 +296,13 @@ class DataReader(object):
     def _neutron_ids(self, key):
         return set(self._nd[key].keys())
 
-    def _router_exclude_ids(self):
-        ids = self._neutron_ids('routers')
-        ids.add(self.provider_router.get_id())
-        return ids
-
     def prepare(self):
         bridges = _get_objects(self.mc.mn_api.get_bridges,
                                exclude=self._neutron_ids('networks'))
         chains = _get_objects(self.mc.mn_api.get_chains,
                               filter_func=_chain_filter)
         routers = _get_objects(self.mc.mn_api.get_routers,
-                               exclude=self._router_exclude_ids())
+                               exclude=self._neutron_ids('routers'))
         ports = _get_objects(self.mc.mn_api.get_ports,
                              filter_func=self._port_filter)
         ip_addr_groups = _get_objects(
@@ -345,6 +341,10 @@ class DataWriter(object):
         self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
+
+    @property
+    def _provider_router_id(self):
+        return self.data['midonet']['provider_router']['id']
 
     def _create_hosts(self, hosts):
         results = {}
@@ -466,6 +466,10 @@ class DataWriter(object):
     def _create_routers(self, routers):
         results = {}
         for router in routers:
+            if router['id'] == self._provider_router_id:
+                LOG.debug("Skipping Provider Router " + str(router))
+                continue
+
             LOG.debug("Creating router " + str(router))
             f = (self.mc.mn_api.add_router()
                         .id(router['id'])
