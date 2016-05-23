@@ -156,9 +156,9 @@ def _to_dto_dict(objs, modify=None):
         return [o.dto for o in objs]
 
 
-def _create_data(f, obj, *args):
+def _create_data(f, obj, *args, **kwargs):
     try:
-        return f(*args)
+        return f(*args, **kwargs)
     except wexc.HTTPClientError as e:
         if e.code == wexc.HTTPConflict.code:
             LOG.warn("Already exists: " + str(obj))
@@ -366,9 +366,9 @@ class DataWriter(object):
                 LOG.debug("Binding port host intf: " + str(p) + ", " +
                           str(host))
                 if not self.dry_run:
-                    # TODO(RYU): Fix MN to throw 409 on dup bindings
-                    self.mc.mn_api.add_host_interface_port(
-                        host, port_id=p["id"], interface_name=p["interface"])
+                    f = self.mc.mn_api.add_host_interface_port
+                    _create_data(f, p, host, port_id=p["id"],
+                                 interface_name=p["interface"])
 
     def _create_hosts(self, hosts):
         for h in hosts:
