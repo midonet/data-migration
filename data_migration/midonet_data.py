@@ -340,10 +340,11 @@ class DataWriter(object):
                 # Skip the port routes
                 next_hop_port = route['nextHopPort']
                 if (route['srcNetworkAddr'] == "0.0.0.0" and
-                    route['srcNetworkLength'] == 0 and
-                    route['dstNetworkLength'] == 32 and
-                    next_hop_port and
-                    route['dstNetworkAddr'] == proute_map.get(next_hop_port)):
+                        route['srcNetworkLength'] == 0 and
+                        route['dstNetworkLength'] == 32 and
+                        next_hop_port and
+                        route['dstNetworkAddr'] == proute_map.get(
+                            next_hop_port)):
                     LOG.debug("Skipping port route " + str(route))
                     continue
 
