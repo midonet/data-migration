@@ -425,8 +425,7 @@ class DataWriter(object):
                      .inv_nw_proto(rule['invNwProto'])
                      .fragment_policy(rule['fragmentPolicy']).create)
 
-                if not self.dry_run:
-                    _create_data(f, rule)
+                _create_data(f, rule)
 
     def _create_bridges(self, bridges):
         results = {}
