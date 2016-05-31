@@ -38,3 +38,5 @@ NEUTRON_POOLS = "load-balancer-pools"
 NEUTRON_MEMBERS = "members"
 NEUTRON_VIPS = "vips"
 NEUTRON_HEALTH_MONITORS = "health-monitors"
+
+METADATA_ROUTE_IP = "169.254.169.254"

@@ -122,6 +122,19 @@ def _convert_to_rule_map(chains):
     return rule_map
 
 
+def _convert_to_route_map(routers):
+    route_map = {}
+    for router in routers:
+        routes = _get_objects(router.get_routes)
+        if routes:
+            # Remove metadata routes
+            routes = [r for r in routes
+                      if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
+            route_map[router.get_id()] = _to_dto_dict(routes)
+
+    return route_map
+
+
 def _is_neutron_port(port, n_ports):
     peer_id = port.get_peer_id()
     return port.get_id() in n_ports or (peer_id is not None and
@@ -214,6 +227,7 @@ class DataReader(object):
             "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
+            "routes": _convert_to_route_map(routers),
             "rules": _convert_to_rule_map(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
             "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
@@ -305,6 +319,55 @@ class DataWriter(object):
             if not self.dry_run:
                 results[chain_id] = _create_data(f, chain)
         return results
+
+    def _port_routes(self, router_id):
+        mido_data = self.data['midonet']
+        ports = mido_data['ports']
+        route_map = {}
+        for port in ports:
+            if port['deviceId'] == router_id:
+                route_map[port['id']] = port['portAddress']
+        return route_map
+
+    def _create_routes(self, routes, routers):
+        for router_id, routes in iter(routes.items()):
+            proute_map = self._port_routes(router_id)
+            for route in routes:
+                if route['learned']:
+                    LOG.debug("Skipping learned route " + str(route))
+                    continue
+
+                # Skip the port routes
+                next_hop_port = route['nextHopPort']
+                if (route['srcNetworkAddr'] == "0.0.0.0" and
+                    route['srcNetworkLength'] == 0 and
+                    route['dstNetworkLength'] == 32 and
+                    next_hop_port and
+                    route['dstNetworkAddr'] == proute_map.get(next_hop_port)):
+                    LOG.debug("Skipping port route " + str(route))
+                    continue
+
+                # TODO(RYU): HM routes?
+
+                LOG.debug("Creating route " + str(route) + " on router " +
+                          router_id)
+                if self.dry_run:
+                    continue
+
+                router = _get_obj(self.mc.mn_api.get_router, router_id,
+                                  cache_map=routers)
+                f = (router.add_route()
+                     .id(route['id'])
+                     .type(route['type'])
+                     .attributes(route.get('attributes'))
+                     .dst_network_addr(route['dstNetworkAddr'])
+                     .dst_network_length(route['srcNetworkLength'])
+                     .src_network_addr(route['srcNetworkAddr'])
+                     .src_network_length(route['srcNetworkLength'])
+                     .next_hop_gateway(route['nextHopGateway'])
+                     .next_hop_port(next_hop_port)
+                     .weight(route['weight']).create)
+                _create_data(f, route)
 
     def _create_rules(self, chain_rules, chains):
         for chain_id, rules in iter(chain_rules.items()):
@@ -666,6 +729,18 @@ class DataWriter(object):
                       "adminStateUp": Bool,
                       "inboundFilterId": UUID,
                       "outboundFilterId": UUID}, ...],
+         "routes": {UUID (Router ID):
+                     [{"id": UUID,
+                       "learned": Bool,
+                       "attributes": String,
+                       "dstNetworkAddr": String,
+                       "dstNetworkLength": Int,
+                       "srcNetworkAddr": String,
+                       "srcNetworkLength": Int,
+                       "nextHopGateway": String,
+                       "nextHopPort": UUID,
+                       "type": String,
+                       "weight": Int}, ...]}, ...,
          "ports": [{"id": UUID,
                     "deviceId": UUID,
                     "adminStateUp": Bool,
@@ -728,6 +803,7 @@ class DataWriter(object):
         self._create_port_group_ports(mido_data['port_group_ports'],
                                       port_groups)
         self._create_rules(mido_data['rules'], chains)
+        self._create_routes(mido_data['routes'], routers)
         self._link_ports(mido_data['port_links'], ports)
 
         # Host Bindings
