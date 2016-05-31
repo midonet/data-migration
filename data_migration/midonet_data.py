@@ -15,7 +15,6 @@
 
 from data_migration import constants as const
 from data_migration import context
-from data_migration import exceptions as exc
 import logging
 from webob import exc as wexc
 
@@ -33,24 +32,6 @@ def _port_is_bound(p):
 
 def _cidr_from_port(p):
     return p.get_network_address() + "/" + str(p.get_network_length())
-
-
-def _make_provider_router_port_dict(p, host, ifname):
-    return {
-        'admin_state_up': p.get_admin_state_up(),
-        'network_cidr': _cidr_from_port(p),
-        'mac': p.get_port_mac(),
-        'ip_address': p.get_port_address(),
-        'host': host,
-        'iface': ifname
-    }
-
-
-def _convert_to_host_id_to_name_map(hosts):
-    h_map = {}
-    for h in hosts:
-        h_map[h.get_id()] = h.get_name()
-    return h_map
 
 
 def _is_neutron_chain(chain):
@@ -197,31 +178,7 @@ class DataReader(object):
 
     def __init__(self, nd):
         self.mc = context.get_read_context()
-        self._provider_router = None
-        self._provider_router_ports = []
         self._nd = nd
-
-    def _get_provider_router(self):
-        routers = _get_objects(self.mc.mn_api.get_routers)
-        try:
-            provider_router = next(
-                r for r in routers
-                if r.get_name() == const.PROVIDER_ROUTER_NAME)
-        except StopIteration:
-            # This should not happen
-            raise exc.UpgradeScriptException("Provider Router not found")
-
-        return provider_router
-
-    @property
-    def provider_router(self):
-        if self._provider_router is None:
-            self._provider_router = self._get_provider_router()
-            LOG.debug("Provider Router: " + str(self._provider_router))
-            self._provider_router_ports = self.provider_router.get_ports()
-            LOG.debug("Provider Router Ports: " +
-                      str(self._provider_router_ports))
-        return self._provider_router
 
     def _port_filter(self, ports):
         """We want to exclude the following ports:
@@ -231,33 +188,6 @@ class DataReader(object):
         """
         n_ports = self._neutron_ids("ports")
         return [p for p in ports if not (_is_neutron_port(p, n_ports))]
-
-    def _prepare_provider_router(self, host_id2name_map):
-        """Prepares the data required for provider router migration
-
-        Gets 'router' and 'ports' portion of the provider router -> edge
-        router migration.  See neutron_data's create_edge_router for more
-        detail on the data.
-
-        host_id2name_map is required to convert host ID to host name that
-        Neutron expects.
-        """
-        ports = []
-        for p in self._provider_router_ports:
-            if _port_is_bound(p):
-                h_name = host_id2name_map[p.get_host_id()]
-                port = _make_provider_router_port_dict(p, h_name,
-                                                       p.get_interface_name())
-                ports.append(port)
-
-        return {
-            'id': self.provider_router.get_id(),
-            'router': {
-                'name': self.provider_router.get_name(),
-                'admin_state_up': self.provider_router.get_admin_state_up()
-            },
-            'ports': ports
-        }
 
     def _neutron_ids(self, key):
         return set(self._nd[key].keys())
@@ -277,7 +207,6 @@ class DataReader(object):
         port_groups = _get_objects(self.mc.mn_api.get_port_groups)
         tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
         hosts = _get_objects(self.mc.mn_api.get_hosts)
-        host_name_map = _convert_to_host_id_to_name_map(hosts)
         return {
             "hosts": _to_dto_dict(hosts),
             "host_interface_ports": _convert_to_host_interface_port_map(hosts),
@@ -294,8 +223,7 @@ class DataReader(object):
             "tunnel_zones": _to_dto_dict(tzs),
             "tunnel_zone_hosts": _convert_to_tz_host_map(tzs),
             "ports": _to_dto_dict(ports),
-            "port_links": _get_port_links(ports),
-            "provider_router": self._prepare_provider_router(host_name_map)
+            "port_links": _get_port_links(ports)
         }
 
 
@@ -305,23 +233,22 @@ class DataWriter(object):
         self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
+        self._pr_port_map = {}
 
-    @property
-    def _provider_router_id(self):
-        return self.data['midonet']['provider_router']['id']
-
-    @property
     def _provider_router_ports(self):
-        ports = self.data['midonet']['ports']
-        return [p for p in ports if (p['deviceId'] ==
-                                     self._provider_router_id)]
+        if not self._pr_port_map:
+            mido_data = self.data['midonet']
+            routers = mido_data['routers']
+            for router in routers:
+                if router['name'] == const.PROVIDER_ROUTER_NAME:
+                    pr_id = router['id']
+                    ports = mido_data['ports']
+                    for port in ports:
+                        if port['deviceId'] == pr_id:
+                            self._pr_port_map[port['id']] = port
+                    break
 
-    @property
-    def _provider_router_port_and_peer_port_ids(self):
-        pr_port_ids = [p['id'] for p in self._provider_router_ports]
-        pr_peer_port_ids = [p['peerId'] for p in self._provider_router_ports
-                            if p['peerId']]
-        return set(pr_port_ids + pr_peer_port_ids)
+        return self._pr_port_map
 
     def _create_hosts(self, hosts):
         results = {}
@@ -336,16 +263,19 @@ class DataWriter(object):
                 results[hid] = _create_data(f, h)
         return results
 
-    def _create_host_interface_ports(self, host_interface_ports, hosts, ports):
-        port_ids = ports.keys()
+    def _create_host_interface_ports(self, host_interface_ports, hosts):
+        port_ids = self._pr_port_map.keys()
         for host_id, hiports in iter(host_interface_ports.items()):
             for hiport in hiports:
                 port_id = hiport['portId']
-                interface_name = hiport['interfaceName']
-                if port_id not in port_ids:
-                    LOG.debug("Skipping binding " + str(hiport))
+
+                # Skip the provider router ports
+                if port_id in port_ids:
+                    LOG.debug("Skipping Provider Router port binding " +
+                              str(port_id))
                     continue
 
+                interface_name = hiport['interfaceName']
                 if _is_lb_hm_interface(interface_name):
                     LOG.debug("Skipping HM port binding " + str(hiport))
                     continue
@@ -376,19 +306,9 @@ class DataWriter(object):
                 results[chain_id] = _create_data(f, chain)
         return results
 
-    def _create_rules(self, chain_rules, chains, ports):
-        port_ids = ports.keys()
+    def _create_rules(self, chain_rules, chains):
         for chain_id, rules in iter(chain_rules.items()):
             for rule in rules:
-                if not set(rule['inPorts']).issubset(port_ids):
-                    LOG.debug("Skipping rule with unknown inport " + str(rule))
-                    continue
-
-                if not set(rule['outPorts']).issubset(port_ids):
-                    LOG.debug("Skipping rule with unknown outport " +
-                              str(rule))
-                    continue
-
                 LOG.debug("Creating rule " + str(rule) + " on chain " +
                           chain_id)
                 if self.dry_run:
@@ -464,10 +384,6 @@ class DataWriter(object):
     def _create_routers(self, routers):
         results = {}
         for router in routers:
-            if router['id'] == self._provider_router_id:
-                LOG.debug("Skipping Provider Router " + str(router))
-                continue
-
             LOG.debug("Creating router " + str(router))
             f = (self.mc.mn_api.add_router()
                         .id(router['id'])
@@ -517,17 +433,12 @@ class DataWriter(object):
 
     def _create_ports(self, ports, bridges, routers):
         results = {}
-        pr_port_ids = self._provider_router_port_and_peer_port_ids
         for port in ports:
-            pid = port['id']
-            if pid in pr_port_ids:
-                LOG.debug("Skipping provider router port/peer " + str(port))
-                continue
-
             LOG.debug("Creating port " + str(port))
             if self.dry_run:
                 continue
 
+            pid = port['id']
             ptype = port['type']
             device_id = port['deviceId']
             if ptype == const.BRG_PORT_TYPE:
@@ -565,19 +476,21 @@ class DataWriter(object):
         return results
 
     def _link_ports(self, links, ports):
-        port_ids = ports.keys()
+        port_ids = self._pr_port_map.keys()
         for port_id, peer_id in iter(links.items()):
             link = (port_id, peer_id)
-            if not (port_id in port_ids or peer_id in port_ids):
-                LOG.debug("Skipping linking " + str(link))
+
+            # Skip the provider router ports
+            if port_id in port_ids or peer_id in port_ids:
+                LOG.debug("Skipping Provider Router port linking " + str(link))
                 continue
 
             LOG.debug("Linking ports " + str(link))
-            if not self.dry_run:
-                port = _get_obj(self.mc.mn_api.get_port, port_id,
-                                cache_map=ports)
-                _create_data(self.mc.mn_api.link, (port_id, peer_id), port,
-                             peer_id)
+            if self.dry_run:
+                continue
+
+            port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
+            _create_data(self.mc.mn_api.link, link, port, peer_id)
 
     def _create_ip_addr_groups(self, ip_addr_groups):
         results = {}
@@ -628,14 +541,9 @@ class DataWriter(object):
                 results[pg_id] = _create_data(f, port_group)
         return results
 
-    def _create_port_group_ports(self, port_group_ports, port_groups, ports):
-        port_ids = ports.keys()
+    def _create_port_group_ports(self, port_group_ports, port_groups):
         for pg_id, pg_port_ids in iter(port_group_ports.items()):
             for pg_port_id in pg_port_ids:
-                if pg_port_id not in port_ids:
-                    LOG.debug("Skipping port group port " + str(pg_port_id))
-                    continue
-
                 LOG.debug("Creating port group port " + str(pg_port_id) +
                           " for port group " + pg_id)
                 if self.dry_run:
@@ -818,12 +726,12 @@ class DataWriter(object):
                                          ip_addr_groups)
         ports = self._create_ports(mido_data['ports'], bridges, routers)
         self._create_port_group_ports(mido_data['port_group_ports'],
-                                      port_groups, ports)
-        self._create_rules(mido_data['rules'], chains, ports)
+                                      port_groups)
+        self._create_rules(mido_data['rules'], chains)
         self._link_ports(mido_data['port_links'], ports)
 
         # Host Bindings
         self._create_tunnel_zone_hosts(mido_data['tunnel_zone_hosts'],
                                        tunnel_zones)
         self._create_host_interface_ports(mido_data['host_interface_ports'],
-                                          hosts, ports)
+                                          hosts)
