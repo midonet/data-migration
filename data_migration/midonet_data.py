@@ -46,7 +46,7 @@ def _chain_filter(chains):
     return [c for c in chains if not _is_neutron_chain(c)]
 
 
-def _convert_to_tz_host_map(tzs):
+def _create_tz_host_map(tzs):
     tz_host_map = {}
     for tz in tzs:
         tzhs = tz.get_hosts()
@@ -55,7 +55,7 @@ def _convert_to_tz_host_map(tzs):
     return tz_host_map
 
 
-def _convert_to_host_interface_port_map(hosts):
+def _create_host_interface_port_map(hosts):
     host_interface_port_map = {}
     for host in hosts:
         hiports = _get_objects(host.get_ports)
@@ -64,7 +64,7 @@ def _convert_to_host_interface_port_map(hosts):
     return host_interface_port_map
 
 
-def _convert_to_port_group_port_map(port_groups):
+def _create_port_group_port_map(port_groups):
     pgp_map = {}
 
     def _extract_port_id(o):
@@ -79,7 +79,7 @@ def _convert_to_port_group_port_map(port_groups):
     return pgp_map
 
 
-def _convert_to_bridge_to_dhcp_subnet_map(bridges):
+def _create_bridge_to_dhcp_subnet_map(bridges):
     subnet_map = {}
     for bridge in bridges:
         subnets = bridge.get_dhcp_subnets()
@@ -94,7 +94,7 @@ def _convert_to_bridge_to_dhcp_subnet_map(bridges):
     return subnet_map
 
 
-def _convert_to_ip_addr_group_addr_map(ip_addr_groups):
+def _create_ip_addr_group_addr_map(ip_addr_groups):
     addr_map = {}
 
     def _to_ipv4(o):
@@ -112,7 +112,7 @@ def _convert_to_ip_addr_group_addr_map(ip_addr_groups):
     return addr_map
 
 
-def _convert_to_rule_map(chains):
+def _create_rule_map(chains):
     rule_map = {}
     for chain in chains:
         rules = _get_objects(chain.get_rules)
@@ -122,7 +122,7 @@ def _convert_to_rule_map(chains):
     return rule_map
 
 
-def _convert_to_route_map(routers):
+def _create_route_map(routers):
     route_map = {}
     for router in routers:
         routes = _get_objects(router.get_routes)
@@ -222,20 +222,20 @@ class DataReader(object):
         hosts = _get_objects(self.mc.mn_api.get_hosts)
         return {
             "hosts": _to_dto_dict(hosts),
-            "host_interface_ports": _convert_to_host_interface_port_map(hosts),
+            "host_interface_ports": _create_host_interface_port_map(hosts),
             "bridges": _to_dto_dict(bridges),
-            "dhcp_subnets": _convert_to_bridge_to_dhcp_subnet_map(bridges),
+            "dhcp_subnets": _create_bridge_to_dhcp_subnet_map(bridges),
             "routers": _to_dto_dict(routers),
             "chains": _to_dto_dict(chains),
-            "routes": _convert_to_route_map(routers),
-            "rules": _convert_to_rule_map(chains),
+            "routes": _create_route_map(routers),
+            "rules": _create_rule_map(chains),
             "ip_addr_groups": _to_dto_dict(ip_addr_groups),
-            "ip_addr_group_addrs": _convert_to_ip_addr_group_addr_map(
+            "ip_addr_group_addrs": _create_ip_addr_group_addr_map(
                 ip_addr_groups),
             "port_groups": _to_dto_dict(port_groups),
-            "port_group_ports": _convert_to_port_group_port_map(port_groups),
+            "port_group_ports": _create_port_group_port_map(port_groups),
             "tunnel_zones": _to_dto_dict(tzs),
-            "tunnel_zone_hosts": _convert_to_tz_host_map(tzs),
+            "tunnel_zone_hosts": _create_tz_host_map(tzs),
             "ports": _to_dto_dict(ports),
             "port_links": _get_port_links(ports)
         }
