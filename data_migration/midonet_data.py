@@ -13,9 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import abc
 from data_migration import constants as const
 from data_migration import context
 import logging
+import six
 from webob import exc as wexc
 
 LOG = logging.getLogger(name="data_migration")
@@ -44,120 +46,6 @@ def _is_neutron_chain(chain):
 
 def _chain_filter(chains):
     return [c for c in chains if not _is_neutron_chain(c)]
-
-
-def _create_tz_host_map(tzs):
-    tz_host_map = {}
-    for tz in tzs:
-        tzhs = tz.get_hosts()
-        if tzhs:
-            tz_host_map[tz.get_id()] = _to_dto_dict(tzhs)
-    return tz_host_map
-
-
-def _create_host_interface_port_map(hosts):
-    host_interface_port_map = {}
-    for host in hosts:
-        hiports = _get_objects(host.get_ports)
-        if hiports:
-            host_interface_port_map[host.get_id()] = _to_dto_dict(hiports)
-    return host_interface_port_map
-
-
-def _create_port_group_port_map(port_groups):
-    pgp_map = {}
-
-    def _extract_port_id(o):
-        return o['portId']
-
-    for port_group in port_groups:
-        pg_ports = _get_objects(port_group.get_ports)
-        if pg_ports:
-            pgp_map[port_group.get_id()] = _to_dto_dict(
-                pg_ports, modify=_extract_port_id)
-
-    return pgp_map
-
-
-def _create_bridge_to_dhcp_subnet_map(bridges):
-    subnet_map = {}
-    for bridge in bridges:
-        subnets = bridge.get_dhcp_subnets()
-        if subnets:
-            subnet_list = []
-            for subnet in subnets:
-                # Also add hosts
-                subnet_list.append(
-                    {"subnet": subnet.dto,
-                     "hosts": _to_dto_dict(subnet.get_dhcp_hosts())})
-            subnet_map[bridge.get_id()] = subnet_list
-    return subnet_map
-
-
-def _create_ip_addr_group_addr_map(ip_addr_groups):
-    addr_map = {}
-
-    def _to_ipv4(o):
-        o['version'] = 4
-        return o
-
-    for ip_addr_group in ip_addr_groups:
-        addrs = ip_addr_group.get_addrs()
-        if addrs:
-            # There seems to be a bug where all IP address group addrs
-            # return as version '6': MI-994.  Since we only support 4,
-            # just always set it to version 4.
-            addr_map[ip_addr_group.get_id()] = _to_dto_dict(addrs,
-                                                            modify=_to_ipv4)
-    return addr_map
-
-
-def _create_bgp_map_and_list(ports):
-    bgp_map = {}
-    bgp_list = []
-    for port in ports:
-        if port.get_type() != const.RTR_PORT_TYPE:
-            continue
-
-        bgp_objs = _get_objects(port.get_bgps)
-        if bgp_objs:
-            bgp_list.extend(bgp_objs)
-            bgp_map[port.get_id()] = _to_dto_dict(bgp_objs)
-
-    return bgp_map, bgp_list
-
-
-def _create_ad_route_map(bgp_objs):
-    ad_route_map = {}
-    for bgp_obj in bgp_objs:
-        ad_routes = _get_objects(bgp_obj.get_ad_routes)
-        if ad_routes:
-            ad_route_map[bgp_obj.get_id()] = _to_dto_dict(ad_routes)
-
-    return ad_route_map
-
-
-def _create_rule_map(chains):
-    rule_map = {}
-    for chain in chains:
-        rules = _get_objects(chain.get_rules)
-        if rules:
-            rule_map[chain.get_id()] = _to_dto_dict(rules)
-
-    return rule_map
-
-
-def _create_route_map(routers):
-    route_map = {}
-    for router in routers:
-        routes = _get_objects(router.get_routes)
-        if routes:
-            # Remove metadata routes
-            routes = [r for r in routes
-                      if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
-            route_map[router.get_id()] = _to_dto_dict(routes)
-
-    return route_map
 
 
 def _is_neutron_port(port, n_ports):
@@ -212,60 +100,296 @@ def _create_data(f, obj, *args, **kwargs):
             LOG.warn("Already exists: " + str(obj))
 
 
-class DataReader(object):
+@six.add_metaclass(abc.ABCMeta)
+class Midonet(object):
 
     def __init__(self, nd):
         self.mc = context.get_read_context()
         self._nd = nd
 
-    def _port_filter(self, ports):
+    def create_resource_data(self):
+        objs = _get_objects(self.get_resources_f, exclude=self.exclude_ids,
+                            filter_func=self.filter_objs)
+        return objs, self.to_dicts(objs, modify=self.modify_dto_f)
+
+    def create_sub_resource_data(self, parent_objs):
+        obj_map = {}
+        obj_list = []
+        for p_obj in parent_objs:
+            if self.skip_parent(p_obj):
+                continue
+
+            objs = self.get_sub_resources(p_obj)
+            objs = self.filter_objs(objs)
+            if objs:
+                objs = self._modify_objs(objs)
+                obj_list.extend(objs)
+                obj_map[p_obj.get_id()] = self.to_dicts(
+                    objs, modify=self.modify_dto_f)
+        return obj_map, obj_list
+
+    def to_dicts(self, objs, modify=None):
+        return _to_dto_dict(objs, modify=modify)
+
+    @property
+    def get_resources_f(self):
+        return None
+
+    def get_sub_resources(self, p_obj):
+        return []
+
+    def _neutron_ids(self, key):
+        return set(self._nd[key].keys())
+
+    @property
+    def exclude_ids(self):
+        return []
+
+    def filter_objs(self, objs):
+        return objs
+
+    @property
+    def modify_dto_f(self):
+        return None
+
+    def _modify_objs(self, objs):
+        return objs
+
+    def skip_parent(self, obj):
+        return False
+
+
+class AdRoute(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_ad_routes()
+
+
+class Bgp(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_bgps()
+
+    def skip_parent(self, p_obj):
+        return p_obj.get_type() != const.RTR_PORT_TYPE
+
+
+class Bridge(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_bridges
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('networks')
+
+
+class Chain(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_chains
+
+    def filter_objs(self, objs):
+        return [c for c in objs if not _is_neutron_chain(c)]
+
+
+class DhcpSubnet(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_dhcp_subnets()
+
+    def to_dicts(self, objs, modify=None):
+        subnet_list = []
+        for subnet in objs:
+            # Also add hosts
+            subnet_list.append(
+                {"subnet": subnet.dto,
+                 "hosts": _to_dto_dict(subnet.get_dhcp_hosts())})
+        return subnet_list
+
+
+class Host(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_hosts
+
+
+class HostInterfacePort(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_ports()
+
+
+class IpAddrGroup(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_ip_addr_groups
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('security-groups')
+
+
+class IpAddrGroupAddr(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_addrs()
+
+    @property
+    def modify_dto_f(self):
+        def _to_ipv4(o):
+            o['version'] = 4
+            return o
+
+        # There seems to be a bug where all IP address group addrs
+        # return as version '6': MI-994.  Since we only support 4,
+        # just always set it to version 4.
+        return _to_ipv4
+
+
+class Port(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_ports
+
+    def filter_objs(self, objs):
         """We want to exclude the following ports:
 
         1. ID matching one of the neutron port IDs
         2. Peer ID, if present, matching one of Neutron port IDs
         """
         n_ports = self._neutron_ids("ports")
-        return [p for p in ports if not (_is_neutron_port(p, n_ports))]
+        return [p for p in objs if not (_is_neutron_port(p, n_ports))]
 
-    def _neutron_ids(self, key):
-        return set(self._nd[key].keys())
+
+class PortGroup(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_port_groups
+
+
+class PortGroupPort(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_ports()
+
+    @property
+    def modify_dto_f(self):
+        def _extract_port_id(o):
+            return o['portId']
+
+        return _extract_port_id
+
+
+class Route(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_routes()
+
+    def filter_objs(self, objs):
+        # Remove metadata routes
+        return [r for r in objs
+                if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
+
+
+class Router(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_routers
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('routers')
+
+
+class Rule(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_rules()
+
+
+class TunnelZone(Midonet):
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_tunnel_zones
+
+
+class TunnelZoneHost(Midonet):
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_hosts()
+
+
+class DataReader(object):
+
+    def __init__(self, nd):
+        self.host = Host(nd)
+        self.tz = TunnelZone(nd)
+        self.bridge = Bridge(nd)
+        self.dhcp = DhcpSubnet(nd)
+        self.router = Router(nd)
+        self.chain = Chain(nd)
+        self.rule = Rule(nd)
+        self.ip_addr_group = IpAddrGroup(nd)
+        self.iag_addr = IpAddrGroupAddr(nd)
+        self.port_group = PortGroup(nd)
+        self.port = Port(nd)
+        self.pgp = PortGroupPort(nd)
+        self.route = Route(nd)
+        self.bgp = Bgp(nd)
+        self.ad_route = AdRoute(nd)
+        self.hi_port = HostInterfacePort(nd)
+        self.tzh = TunnelZoneHost(nd)
 
     def prepare(self):
-        bridges = _get_objects(self.mc.mn_api.get_bridges,
-                               exclude=self._neutron_ids('networks'))
-        chains = _get_objects(self.mc.mn_api.get_chains,
-                              filter_func=_chain_filter)
-        routers = _get_objects(self.mc.mn_api.get_routers,
-                               exclude=self._neutron_ids('routers'))
-        ports = _get_objects(self.mc.mn_api.get_ports,
-                             filter_func=self._port_filter)
-        ip_addr_groups = _get_objects(
-            self.mc.mn_api.get_ip_addr_groups,
-            exclude=self._neutron_ids("security-groups"))
-        port_groups = _get_objects(self.mc.mn_api.get_port_groups)
-        tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
-        hosts = _get_objects(self.mc.mn_api.get_hosts)
-        bgp_map, bgp_objs = _create_bgp_map_and_list(ports)
+        # Top level objects
+        bridge_objs, bridge_dicts = self.bridge.create_resource_data()
+        chain_objs, chain_dicts = self.chain.create_resource_data()
+        host_objs, host_dicts = self.host.create_resource_data()
+        ipag_objs, ipag_dicts = self.ip_addr_group.create_resource_data()
+        pg_objs, pg_dicts = self.port_group.create_resource_data()
+        router_objs, router_dicts = self.router.create_resource_data()
+        tz_objs, tz_dicts = self.tz.create_resource_data()
+
+        # Sub-resources
+        port_objs, port_dicts = self.port.create_resource_data()
+        bgp_map, bgp_objs = self.bgp.create_sub_resource_data(port_objs)
+        ar_map, _ = self.ad_route.create_sub_resource_data(bgp_objs)
+        dhcp_map, _ = self.dhcp.create_sub_resource_data(bridge_objs)
+        hip_map, _ = self.hi_port.create_sub_resource_data(host_objs)
+        iag_addr_map, _ = self.iag_addr.create_sub_resource_data(ipag_objs)
+        pgp_map, _ = self.pgp.create_sub_resource_data(pg_objs)
+        route_map, _ = self.route.create_sub_resource_data(router_objs)
+        rule_map, _ = self.rule.create_sub_resource_data(chain_objs)
+        tzh_map, _ = self.tzh.create_sub_resource_data(tz_objs)
+
         return {
+            "ad_routes": ar_map,
             "bgp": bgp_map,
-            "ad_routes": _create_ad_route_map(bgp_objs),
-            "hosts": _to_dto_dict(hosts),
-            "host_interface_ports": _create_host_interface_port_map(hosts),
-            "bridges": _to_dto_dict(bridges),
-            "dhcp_subnets": _create_bridge_to_dhcp_subnet_map(bridges),
-            "routers": _to_dto_dict(routers),
-            "chains": _to_dto_dict(chains),
-            "routes": _create_route_map(routers),
-            "rules": _create_rule_map(chains),
-            "ip_addr_groups": _to_dto_dict(ip_addr_groups),
-            "ip_addr_group_addrs": _create_ip_addr_group_addr_map(
-                ip_addr_groups),
-            "port_groups": _to_dto_dict(port_groups),
-            "port_group_ports": _create_port_group_port_map(port_groups),
-            "tunnel_zones": _to_dto_dict(tzs),
-            "tunnel_zone_hosts": _create_tz_host_map(tzs),
-            "ports": _to_dto_dict(ports),
-            "port_links": _get_port_links(ports)
+            "bridges": bridge_dicts,
+            "chains": chain_dicts,
+            "dhcp_subnets": dhcp_map,
+            "hosts": host_dicts,
+            "host_interface_ports": hip_map,
+            "ip_addr_groups": ipag_dicts,
+            "ip_addr_group_addrs": iag_addr_map,
+            "port_groups": pg_dicts,
+            "port_group_ports": pgp_map,
+            "ports": port_dicts,
+            "port_links": _get_port_links(port_objs),
+            "routers": router_dicts,
+            "routes": route_map,
+            "rules": rule_map,
+            "tunnel_zones": tz_dicts,
+            "tunnel_zone_hosts": tzh_map
         }
 
 
