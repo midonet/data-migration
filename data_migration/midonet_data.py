@@ -85,11 +85,22 @@ def _get_obj(f, obj_id, cache_map=None):
     return obj
 
 
-def _to_dto_dict(objs, modify=None):
-    if modify:
-        return [modify(o.dto) for o in objs]
-    else:
-        return [o.dto for o in objs]
+def _extract_fields(obj, fields):
+    return dict((k, obj.get(k)) for k in fields)
+
+
+def _to_dto_dict(objs, modify=None, fields=None):
+
+    def _modify(obj):
+        if fields:
+            obj = _extract_fields(obj, fields)
+
+        if modify:
+            obj = modify(obj)
+
+        return obj
+
+    return [_modify(o.dto) for o in objs]
 
 
 def _create_data(f, obj, *args, **kwargs):
@@ -110,7 +121,8 @@ class Midonet(object):
     def create_resource_data(self):
         objs = _get_objects(self.get_resources_f, exclude=self.exclude_ids,
                             filter_func=self.filter_objs)
-        return objs, self.to_dicts(objs, modify=self.modify_dto_f)
+        return objs, self.to_dicts(objs, modify=self.modify_dto_f,
+                                   fields=self.read_fields)
 
     def create_sub_resource_data(self, parent_objs):
         obj_map = {}
@@ -125,11 +137,11 @@ class Midonet(object):
                 objs = self._modify_objs(objs)
                 obj_list.extend(objs)
                 obj_map[p_obj.get_id()] = self.to_dicts(
-                    objs, modify=self.modify_dto_f)
+                    objs, modify=self.modify_dto_f, fields=self.read_fields)
         return obj_map, obj_list
 
-    def to_dicts(self, objs, modify=None):
-        return _to_dto_dict(objs, modify=modify)
+    def to_dicts(self, objs, modify=None, fields=None):
+        return _to_dto_dict(objs, modify=modify, fields=fields)
 
     @property
     def get_resources_f(self):
@@ -158,14 +170,26 @@ class Midonet(object):
     def skip_parent(self, obj):
         return False
 
+    @property
+    def read_fields(self):
+        return set()
+
 
 class AdRoute(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"id", "nwPrefix", "prefixLength"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_ad_routes()
 
 
 class Bgp(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"id", "localAS", "peerAS", "peerAddr"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_bgps()
@@ -175,6 +199,11 @@ class Bgp(Midonet):
 
 
 class Bridge(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"id", "name", "tenantId", "adminStateUp", "inboundFilterId",
+                "outboundFilterId"}
 
     @property
     def get_resources_f(self):
@@ -188,6 +217,10 @@ class Bridge(Midonet):
 class Chain(Midonet):
 
     @property
+    def read_fields(self):
+        return {"id", "name", "tenantId"}
+
+    @property
     def get_resources_f(self):
         return self.mc.mn_api.get_chains
 
@@ -197,20 +230,35 @@ class Chain(Midonet):
 
 class DhcpSubnet(Midonet):
 
+    @property
+    def read_fields(self):
+        return {"defaultGateway", "serverAddr", "dnsServerAddrs",
+                "subnetPrefix", "subnetLength", "interfaceMTU", "enabled",
+                "opt121Routes"}
+
+    @property
+    def _host_fields(self):
+        return {"name", "ipAddr", "macAddr"}
+
     def get_sub_resources(self, p_obj):
         return p_obj.get_dhcp_subnets()
 
-    def to_dicts(self, objs, modify=None):
+    def to_dicts(self, objs, modify=None, fields=None):
         subnet_list = []
         for subnet in objs:
             # Also add hosts
             subnet_list.append(
-                {"subnet": subnet.dto,
-                 "hosts": _to_dto_dict(subnet.get_dhcp_hosts())})
+                {"subnet": _extract_fields(subnet.dto, self.read_fields),
+                 "hosts": _to_dto_dict(subnet.get_dhcp_hosts(),
+                                       fields=self._host_fields)})
         return subnet_list
 
 
 class Host(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"id", "name"}
 
     @property
     def get_resources_f(self):
@@ -219,11 +267,19 @@ class Host(Midonet):
 
 class HostInterfacePort(Midonet):
 
+    @property
+    def read_fields(self):
+        return {"portId", "interfaceName"}
+
     def get_sub_resources(self, p_obj):
         return p_obj.get_ports()
 
 
 class IpAddrGroup(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"id", "name"}
 
     @property
     def get_resources_f(self):
@@ -235,6 +291,10 @@ class IpAddrGroup(Midonet):
 
 
 class IpAddrGroupAddr(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"addr", "version"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_addrs()
@@ -254,6 +314,12 @@ class IpAddrGroupAddr(Midonet):
 class Port(Midonet):
 
     @property
+    def read_fields(self):
+        return {"id", "deviceId", "adminStateUp", "inboundFilterId",
+                "outboundFilterId", "vifId", "vlanId", "portAddress",
+                "networkAddress", "networkLength", "portMac", "type"}
+
+    @property
     def get_resources_f(self):
         return self.mc.mn_api.get_ports
 
@@ -270,11 +336,19 @@ class Port(Midonet):
 class PortGroup(Midonet):
 
     @property
+    def read_fields(self):
+        return {"id", "name", "tenantId", "stateful"}
+
+    @property
     def get_resources_f(self):
         return self.mc.mn_api.get_port_groups
 
 
 class PortGroupPort(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"portId"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_ports()
@@ -289,6 +363,12 @@ class PortGroupPort(Midonet):
 
 class Route(Midonet):
 
+    @property
+    def read_fields(self):
+        return {"id", "learned", "attributes", "dstNetworkAddr",
+                "dstNetworkLength", "srcNetworkAddr", "srcNetworkLength",
+                "nextHopGateway", "nextHopPort", "type", "weight"}
+
     def get_sub_resources(self, p_obj):
         return p_obj.get_routes()
 
@@ -301,6 +381,11 @@ class Route(Midonet):
 class Router(Midonet):
 
     @property
+    def read_fields(self):
+        return {"id", "name", "tenantId", "adminStateUp",
+                "inboundFilterId", "outboundFilterId"}
+
+    @property
     def get_resources_f(self):
         return self.mc.mn_api.get_routers
 
@@ -311,6 +396,20 @@ class Router(Midonet):
 
 class Rule(Midonet):
 
+    @property
+    def read_fields(self):
+        return {"id", "jumpChainName", "jumpChainId", "natTargets", "type",
+                "flowAction", "requestId", "limit", "condInvert", "invDlDst",
+                "invDlSrc", "invDlType", "invInPorts", "invOutPorts",
+                "invNwDst", "invNwProto", "invNwSrc", "invNwTos",
+                "invPortGroup", "invIpAddrGroupDst", "invIpAddrGroupSrc",
+                "invTpDst", "invTpSrc", "matchForwardFlow", "matchReturnFlow",
+                "dlDst", "dlDstMask", "dlSrc", "dlSrcMask", "dlType",
+                "inPorts", "outPorts", "nwDstAddress", "nwDstLength",
+                "nwProto", "nwSrcAddress", "nwSrcLength", "nwTos", "portGroup",
+                "ipAddrGroupDst", "ipAddrGroupSrc", "tpSrc", "tpDst",
+                "fragmentPolicy"}
+
     def get_sub_resources(self, p_obj):
         return p_obj.get_rules()
 
@@ -318,11 +417,19 @@ class Rule(Midonet):
 class TunnelZone(Midonet):
 
     @property
+    def read_fields(self):
+        return {"id", "type", "name"}
+
+    @property
     def get_resources_f(self):
         return self.mc.mn_api.get_tunnel_zones
 
 
 class TunnelZoneHost(Midonet):
+
+    @property
+    def read_fields(self):
+        return {"hostId", "ipAddress"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_hosts()
