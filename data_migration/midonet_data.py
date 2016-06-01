@@ -112,6 +112,31 @@ def _create_ip_addr_group_addr_map(ip_addr_groups):
     return addr_map
 
 
+def _create_bgp_map_and_list(ports):
+    bgp_map = {}
+    bgp_list = []
+    for port in ports:
+        if port.get_type() != const.RTR_PORT_TYPE:
+            continue
+
+        bgp_objs = _get_objects(port.get_bgps)
+        if bgp_objs:
+            bgp_list.extend(bgp_objs)
+            bgp_map[port.get_id()] = _to_dto_dict(bgp_objs)
+
+    return bgp_map, bgp_list
+
+
+def _create_ad_route_map(bgp_objs):
+    ad_route_map = {}
+    for bgp_obj in bgp_objs:
+        ad_routes = _get_objects(bgp_obj.get_ad_routes)
+        if ad_routes:
+            ad_route_map[bgp_obj.get_id()] = _to_dto_dict(ad_routes)
+
+    return ad_route_map
+
+
 def _create_rule_map(chains):
     rule_map = {}
     for chain in chains:
@@ -220,7 +245,10 @@ class DataReader(object):
         port_groups = _get_objects(self.mc.mn_api.get_port_groups)
         tzs = _get_objects(self.mc.mn_api.get_tunnel_zones)
         hosts = _get_objects(self.mc.mn_api.get_hosts)
+        bgp_map, bgp_objs = _create_bgp_map_and_list(ports)
         return {
+            "bgp": bgp_map,
+            "ad_routes": _create_ad_route_map(bgp_objs),
             "hosts": _to_dto_dict(hosts),
             "host_interface_ports": _create_host_interface_port_map(hosts),
             "bridges": _to_dto_dict(bridges),
@@ -328,6 +356,59 @@ class DataWriter(object):
             if port['deviceId'] == router_id:
                 route_map[port['id']] = port['portAddress']
         return route_map
+
+    def _get_port_device_id(self, port_id):
+        ports = self.data['midonet']['ports']
+        return next(p['deviceId'] for p in ports if p['id'] == port_id)
+
+    def _create_bgp(self, bgp_map, routers):
+        for port_id, bgp_list in iter(bgp_map.items()):
+            for bgp in bgp_list:
+                LOG.debug("Creating BGP " + str(bgp) + " that was on port " +
+                          port_id)
+                if self.dry_run:
+                    continue
+
+                router_id = self._get_port_device_id(port_id)
+                router = _get_obj(self.mc.mn_api.get_router, router_id,
+                                  cache_map=routers)
+
+                # Update router with local AS
+                LOG.debug("Updating router " + router_id + " with asn " +
+                          str(bgp['localAS']))
+                router.asn(bgp['localAS']).update()
+
+                f = (router.add_bgp_peer()
+                     .id(bgp['id'])
+                     .asn(bgp['peerAS'])
+                     .address(bgp['peerAddr']).create)
+                _create_data(f, bgp)
+
+    def _get_bgp_router_id(self, bgp_id):
+        bgp_map = self.data['midonet']['bgp']
+        for port_id, bgp_list in iter(bgp_map.items()):
+            for bgp in bgp_list:
+                if bgp['id'] == bgp_id:
+                    return self._get_port_device_id(port_id)
+        return None
+
+    def _create_ad_route(self, ad_route_map, routers):
+        for bgp_id, ad_routes in iter(ad_route_map.items()):
+            for ad_route in ad_routes:
+                LOG.debug("Creating Ad route " + str(ad_route) + " for BGP " +
+                          bgp_id)
+                if self.dry_run:
+                    continue
+
+                router_id = self._get_bgp_router_id(bgp_id)
+                router = _get_obj(self.mc.mn_api.get_router, router_id,
+                                  cache_map=routers)
+
+                f = (router.add_bgp_network()
+                     .id(ad_route['id'])
+                     .subnet_address(ad_route['nwPrefix'])
+                     .subnet_length(ad_route['prefixLength']).create)
+                _create_data(f, ad_route)
 
     def _create_routes(self, routes, routers):
         for router_id, routes in iter(routes.items()):
@@ -753,6 +834,15 @@ class DataWriter(object):
                     "networkLength": Int,
                     "portMac": String,
                     "type": String}, ...],
+         "bgp": {UUID (Port ID):
+                 [{"id": UUID,
+                   "localAS": Int,
+                   "peerAS": Int,
+                   "peerAddr": String}, ...]}, ...,
+         "ad_routes": {UUID (BGP ID):
+                       [{"id": UUID,
+                         "nwPrefix": String,
+                         "prefixLength": Int}, ...], ...,
          "ip_addr_groups": [{"id": UUID,
                              "name": String,}, ...],
          "ip_addr_group_addrs": {UUID (IP addr group ID):
@@ -796,6 +886,8 @@ class DataWriter(object):
         port_groups = self._create_port_groups(mido_data['port_groups'])
 
         # Sub-resources
+        self._create_bgp(mido_data['bgp'], routers)
+        self._create_ad_route(mido_data['ad_routes'], routers)
         self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
         self._create_ip_addr_group_addrs(mido_data['ip_addr_group_addrs'],
                                          ip_addr_groups)
