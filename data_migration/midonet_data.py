@@ -279,12 +279,11 @@ class DataWriter(object):
 
     def _provider_router_ports(self):
         if not self._pr_port_map:
-            mido_data = self.data['midonet']
-            routers = mido_data['routers']
+            routers = self._get_resources('routers')
             for router in routers:
                 if router['name'] == const.PROVIDER_ROUTER_NAME:
                     pr_id = router['id']
-                    ports = mido_data['ports']
+                    ports = self._get_resources('ports')
                     for port in ports:
                         if port['deviceId'] == pr_id:
                             self._pr_port_map[port['id']] = port
@@ -292,8 +291,13 @@ class DataWriter(object):
 
         return self._pr_port_map
 
-    def _create_hosts(self, hosts):
+    def _get_resources(self, key):
+        mido_data = self.data['midonet']
+        return mido_data(key)
+
+    def _create_hosts(self):
         results = {}
+        hosts = self._get_resources('hosts')
         for h in hosts:
             LOG.debug("Creating host " + str(h))
             hid = h['id']
@@ -305,7 +309,8 @@ class DataWriter(object):
                 results[hid] = _create_data(f, h)
         return results
 
-    def _create_host_interface_ports(self, host_interface_ports, hosts):
+    def _create_host_interface_ports(self, hosts):
+        host_interface_ports = self._get_resources('host_interface_ports')
         port_ids = self._pr_port_map.keys()
         for host_id, hiports in iter(host_interface_ports.items()):
             for hiport in hiports:
@@ -334,8 +339,9 @@ class DataWriter(object):
                      .create)
                 _create_data(f, hiport)
 
-    def _create_chains(self, chains):
+    def _create_chains(self):
         results = {}
+        chains = self._get_resources('chains')
         for chain in chains:
             LOG.debug("Creating chain " + str(chain))
             chain_id = chain['id']
@@ -349,8 +355,7 @@ class DataWriter(object):
         return results
 
     def _port_routes(self, router_id):
-        mido_data = self.data['midonet']
-        ports = mido_data['ports']
+        ports = self._get_resources('ports')
         route_map = {}
         for port in ports:
             if port['deviceId'] == router_id:
@@ -358,10 +363,11 @@ class DataWriter(object):
         return route_map
 
     def _get_port_device_id(self, port_id):
-        ports = self.data['midonet']['ports']
+        ports = self._get_resources('ports')
         return next(p['deviceId'] for p in ports if p['id'] == port_id)
 
-    def _create_bgp(self, bgp_map, routers):
+    def _create_bgp(self, routers):
+        bgp_map = self._get_resources('bgp')
         for port_id, bgp_list in iter(bgp_map.items()):
             for bgp in bgp_list:
                 LOG.debug("Creating BGP " + str(bgp) + " that was on port " +
@@ -385,14 +391,15 @@ class DataWriter(object):
                 _create_data(f, bgp)
 
     def _get_bgp_router_id(self, bgp_id):
-        bgp_map = self.data['midonet']['bgp']
+        bgp_map = self._get_resources('bgp')
         for port_id, bgp_list in iter(bgp_map.items()):
             for bgp in bgp_list:
                 if bgp['id'] == bgp_id:
                     return self._get_port_device_id(port_id)
         return None
 
-    def _create_ad_route(self, ad_route_map, routers):
+    def _create_ad_route(self, routers):
+        ad_route_map = self._get_resources('ad_routes')
         for bgp_id, ad_routes in iter(ad_route_map.items()):
             for ad_route in ad_routes:
                 LOG.debug("Creating Ad route " + str(ad_route) + " for BGP " +
@@ -410,7 +417,8 @@ class DataWriter(object):
                      .subnet_length(ad_route['prefixLength']).create)
                 _create_data(f, ad_route)
 
-    def _create_routes(self, routes, routers):
+    def _create_routes(self, routers):
+        routes = self._get_resources('routes')
         for router_id, routes in iter(routes.items()):
             proute_map = self._port_routes(router_id)
             for route in routes:
@@ -451,7 +459,8 @@ class DataWriter(object):
                      .weight(route['weight']).create)
                 _create_data(f, route)
 
-    def _create_rules(self, chain_rules, chains):
+    def _create_rules(self, chains):
+        chain_rules = self._get_resources('rules')
         for chain_id, rules in iter(chain_rules.items()):
             for rule in rules:
                 LOG.debug("Creating rule " + str(rule) + " on chain " +
@@ -509,8 +518,9 @@ class DataWriter(object):
 
                 _create_data(f, rule)
 
-    def _create_bridges(self, bridges):
+    def _create_bridges(self):
         results = {}
+        bridges = self._get_resources('bridges')
         for bridge in bridges:
             LOG.debug("Creating bridge " + str(bridge))
             f = (self.mc.mn_api.add_bridge()
@@ -525,8 +535,9 @@ class DataWriter(object):
                 results[bridge['id']] = _create_data(f, bridge)
         return results
 
-    def _create_routers(self, routers):
+    def _create_routers(self):
         results = {}
+        routers = self._get_resources('routers')
         for router in routers:
             LOG.debug("Creating router " + str(router))
             f = (self.mc.mn_api.add_router()
@@ -541,7 +552,8 @@ class DataWriter(object):
                 results[router['id']] = _create_data(f, router)
         return results
 
-    def _create_dhcp_subnets(self, dhcp_subnets, bridges):
+    def _create_dhcp_subnets(self, bridges):
+        dhcp_subnets = self._get_resources('dhcp_subnets')
         for bid, subnets in iter(dhcp_subnets.items()):
             for subnet in subnets:
                 LOG.debug("Creating dhcp subnet " + str(subnet) +
@@ -575,8 +587,9 @@ class DataWriter(object):
                          .create)
                     _create_data(f, h)
 
-    def _create_ports(self, ports, bridges, routers):
+    def _create_ports(self, bridges, routers):
         results = {}
+        ports = self._get_resources('ports')
         for port in ports:
             LOG.debug("Creating port " + str(port))
             if self.dry_run:
@@ -619,7 +632,8 @@ class DataWriter(object):
             results[pid] = _create_data(f, port)
         return results
 
-    def _link_ports(self, links, ports):
+    def _link_ports(self, ports):
+        links = self._get_resources('port_links')
         port_ids = self._pr_port_map.keys()
         for port_id, peer_id in iter(links.items()):
             link = (port_id, peer_id)
@@ -636,8 +650,9 @@ class DataWriter(object):
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
             _create_data(self.mc.mn_api.link, link, port, peer_id)
 
-    def _create_ip_addr_groups(self, ip_addr_groups):
+    def _create_ip_addr_groups(self):
         results = {}
+        ip_addr_groups = self._get_resources('ip_addr_groups')
         for ip_addr_group in ip_addr_groups:
             LOG.debug("Creating IP address group " + str(ip_addr_group))
             ip_addr_group_id = ip_addr_group['id']
@@ -649,8 +664,8 @@ class DataWriter(object):
                 results[ip_addr_group_id] = _create_data(f, ip_addr_group)
         return results
 
-    def _create_ip_addr_group_addrs(self, ip_address_group_addrs,
-                                    ip_addr_groups):
+    def _create_ip_addr_group_addrs(self, ip_addr_groups):
+        ip_address_group_addrs = self._get_resources('ip_addr_group_addrs')
         for addr_group_id, addrs in iter(ip_address_group_addrs.items()):
             for addr in addrs:
                 LOG.debug("Creating ip addr group addr " + str(addr) +
@@ -670,8 +685,9 @@ class DataWriter(object):
                     f = iag.add_ipv6_addr().addr(addr['addr']).create
                 _create_data(f, addr)
 
-    def _create_port_groups(self, port_groups):
+    def _create_port_groups(self):
         results = {}
+        port_groups = self._get_resources('port_groups')
         for port_group in port_groups:
             LOG.debug("Creating port group " + str(port_group))
             pg_id = port_group['id']
@@ -685,7 +701,8 @@ class DataWriter(object):
                 results[pg_id] = _create_data(f, port_group)
         return results
 
-    def _create_port_group_ports(self, port_group_ports, port_groups):
+    def _create_port_group_ports(self, port_groups):
+        port_group_ports = self._get_resources('port_group_ports')
         for pg_id, pg_port_ids in iter(port_group_ports.items()):
             for pg_port_id in pg_port_ids:
                 LOG.debug("Creating port group port " + str(pg_port_id) +
@@ -700,8 +717,9 @@ class DataWriter(object):
                 f = pg.add_port_group_port().port_id(pg_port_id).create
                 _create_data(f, (pg_id, pg_port_id))
 
-    def _create_tunnel_zones(self, tzs):
+    def _create_tunnel_zones(self):
         results = {}
+        tzs = self._get_resources('tunnel_zones')
         for tz in tzs:
             LOG.debug("Creating tunnel zone " + str(tz))
             tz_id = tz['id']
@@ -714,7 +732,8 @@ class DataWriter(object):
                 results[tz_id] = _create_data(f, tz)
         return results
 
-    def _create_tunnel_zone_hosts(self, tunnel_zone_hosts, tunnel_zones):
+    def _create_tunnel_zone_hosts(self, tunnel_zones):
+        tunnel_zone_hosts = self._get_resources('tunnel_zone_hosts')
         for tz_id, tzhs in iter(tunnel_zone_hosts.items()):
             for tzh in tzhs:
                 LOG.debug("Creating tunnzel zone host " + str(tzh))
@@ -875,31 +894,25 @@ class DataWriter(object):
         }
         """
         LOG.info('Running MidoNet migration process')
-        mido_data = self.data['midonet']
-        hosts = self._create_hosts(mido_data['hosts'])
-        tunnel_zones = self._create_tunnel_zones(mido_data["tunnel_zones"])
-        chains = self._create_chains(mido_data['chains'])
-        bridges = self._create_bridges(mido_data['bridges'])
-        routers = self._create_routers(mido_data['routers'])
-        ip_addr_groups = self._create_ip_addr_groups(
-            mido_data['ip_addr_groups'])
-        port_groups = self._create_port_groups(mido_data['port_groups'])
+        hosts = self._create_hosts()
+        tunnel_zones = self._create_tunnel_zones()
+        chains = self._create_chains()
+        bridges = self._create_bridges()
+        routers = self._create_routers()
+        ip_addr_groups = self._create_ip_addr_groups()
+        port_groups = self._create_port_groups()
 
         # Sub-resources
-        self._create_bgp(mido_data['bgp'], routers)
-        self._create_ad_route(mido_data['ad_routes'], routers)
-        self._create_dhcp_subnets(mido_data['dhcp_subnets'], bridges)
-        self._create_ip_addr_group_addrs(mido_data['ip_addr_group_addrs'],
-                                         ip_addr_groups)
-        ports = self._create_ports(mido_data['ports'], bridges, routers)
-        self._create_port_group_ports(mido_data['port_group_ports'],
-                                      port_groups)
-        self._create_rules(mido_data['rules'], chains)
-        self._create_routes(mido_data['routes'], routers)
-        self._link_ports(mido_data['port_links'], ports)
+        self._create_bgp(routers)
+        self._create_ad_route(routers)
+        self._create_dhcp_subnets(bridges)
+        self._create_ip_addr_group_addrs(ip_addr_groups)
+        ports = self._create_ports(bridges, routers)
+        self._create_port_group_ports(port_groups)
+        self._create_rules(chains)
+        self._create_routes(routers)
+        self._link_ports(ports)
 
         # Host Bindings
-        self._create_tunnel_zone_hosts(mido_data['tunnel_zone_hosts'],
-                                       tunnel_zones)
-        self._create_host_interface_ports(mido_data['host_interface_ports'],
-                                          hosts)
+        self._create_tunnel_zone_hosts(tunnel_zones)
+        self._create_host_interface_ports(hosts)
