@@ -286,6 +286,13 @@ class AdRouteRead(MidonetRead):
 
 
 class AdRouteWrite(MidonetWrite):
+    """Expected format:
+
+    "ad_routes": {UUID (BGP ID):
+                  [{"id": UUID,
+                    "nwPrefix": String,
+                    "prefixLength": Int}, ...], ...,
+    """
 
     @property
     def key(self):
@@ -323,6 +330,14 @@ class BgpRead(MidonetRead):
 
 
 class BgpWrite(MidonetWrite):
+    """Expected format:
+
+    "bgp": {UUID (Port ID):
+            [{"id": UUID,
+              "localAS": Int,
+              "peerAS": Int,
+              "peerAddr": String}, ...]}, ...,
+    """
 
     @property
     def key(self):
@@ -361,6 +376,15 @@ class BridgeRead(MidonetRead):
 
 
 class BridgeWrite(MidonetWrite):
+    """Expected format:
+
+    "bridges": [{"id": UUID,
+                 "name": String,
+                 "tenantId": String,
+                 "adminStateUp": Bool,
+                 "inboundFilterId": UUID,
+                 "outboundFilterId":UUID}, ...],
+    """
 
     @property
     def key(self):
@@ -392,7 +416,12 @@ class ChainRead(MidonetRead):
 
 
 class ChainWrite(MidonetWrite):
+    """Expected format:
 
+    "chains": [{"id": UUID,
+                "name": String,
+                "tenantId": String}, ...],
+    """
     @property
     def key(self):
         return "chains"
@@ -432,6 +461,27 @@ class DhcpSubnetRead(MidonetRead):
 
 
 class DhcpSubnetWrite(MidonetWrite):
+    """Expected format:
+
+    "dhcp_subnets": {UUID (Bridge Id):
+                     [{"subnet":
+                       {"defaultGateway": String,
+                        "serverAddr": String,
+                        "dnsServerAddrs": [String],
+                        "subnetPrefix": String,
+                        "subnetLength": Int,
+                        "interfaceMTU": Int,
+                        "enabled", Bool,
+                        "opt121Routes": [{"destinationPrefix": String,
+                                          "destinationLength": Int,
+                                          "gatewayAddr": String}, ...],
+                       },
+                       "hosts"; [{"name": String,
+                                  "ipAddr": String,
+                                  "macAddr": String}, ...]
+                      ], ...}, ...,
+
+    """
 
     @property
     def key(self):
@@ -475,6 +525,11 @@ class HostRead(MidonetRead):
 
 
 class HostWrite(MidonetWrite):
+    """Expected format:
+
+    "hosts": [{"id": UUID,
+               "name": String}, ...],
+    """
 
     @property
     def key(self):
@@ -498,6 +553,12 @@ class HostInterfacePortRead(MidonetRead):
 
 
 class HostInterfacePortWrite(MidonetWrite):
+    """Expected format:
+
+    "host_interface_ports": {UUID (Host ID):
+                          [{"portId": UUID,
+                            "interfaceName": String}, ...]}, ...,
+    """
 
     @property
     def key(self):
@@ -539,7 +600,11 @@ class IpAddrGroupRead(MidonetRead):
 
 
 class IpAddrGroupWrite(MidonetWrite):
+    """Expected format:
 
+    "ip_addr_groups": [{"id": UUID,
+                     "name": String,}, ...],
+    """
     @property
     def key(self):
         return "ip_addr_groups"
@@ -573,7 +638,12 @@ class IpAddrGroupAddrRead(MidonetRead):
 
 
 class IpAddrGroupAddrWrite(MidonetWrite):
+    """Expected format:
 
+    "ip_addr_group_addrs": {UUID (IP addr group ID):
+                          [{"addr": String,
+                            "version": Int}, ...]}, ...
+    """
     @property
     def key(self):
         return "ip_addr_group_addrs"
@@ -589,6 +659,10 @@ class IpAddrGroupAddrWrite(MidonetWrite):
 
 
 class LinkWrite(MidonetWrite):
+    """Expected format:
+
+    "port_links": {UUID [Port ID]: UUID [PeerPort ID]}
+    """
 
     def link_ports(self, ports):
         links = self._get_resources('port_links')
@@ -631,6 +705,21 @@ class PortRead(MidonetRead):
 
 
 class PortWrite(MidonetWrite):
+    """Expected format:
+
+    "ports": [{"id": UUID,
+            "deviceId": UUID,
+            "adminStateUp": Bool,
+            "inboundFilterId":, UUID,
+            "outboundFilterId": UUID,
+            "vifId": String,
+            "vlanId": Int,
+            "portAddress": String,
+            "networkAddress": String,
+            "networkLength": Int,
+            "portMac": String,
+            "type": String}, ...],
+    """
 
     @property
     def key(self):
@@ -686,6 +775,13 @@ class PortGroupRead(MidonetRead):
 
 
 class PortGroupWrite(MidonetWrite):
+    """Expected format:
+
+    "port_groups": [{"id": UUID,
+                  "name": String,
+                  "tenantId": String,
+                  "stateful": Bool, ...],
+    """
 
     @property
     def key(self):
@@ -718,6 +814,11 @@ class PortGroupPortRead(MidonetRead):
 
 
 class PortGroupPortWrite(MidonetWrite):
+    """Expected format:
+
+    "port_group_ports": {UUID (Port group ID):
+                      [UUID (Port ID)]}, ...
+    """
 
     @property
     def key(self):
@@ -748,6 +849,21 @@ class RouteRead(MidonetRead):
 
 
 class RouteWrite(MidonetWrite):
+    """Expected format:
+
+    "routes": {UUID (Router ID):
+             [{"id": UUID,
+               "learned": Bool,
+               "attributes": String,
+               "dstNetworkAddr": String,
+               "dstNetworkLength": Int,
+               "srcNetworkAddr": String,
+               "srcNetworkLength": Int,
+               "nextHopGateway": String,
+               "nextHopPort": UUID,
+               "type": String,
+               "weight": Int}, ...]}, ...,
+    """
 
     @property
     def key(self):
@@ -813,6 +929,15 @@ class RouterRead(MidonetRead):
 
 
 class RouterWrite(MidonetWrite):
+    """Expected format:
+
+    "routers": [{"id": UUID,
+              "name": String,
+              "tenantId": String,
+              "adminStateUp": Bool,
+              "inboundFilterId": UUID,
+              "outboundFilterId": UUID}, ...],
+    """
 
     @property
     def key(self):
@@ -850,6 +975,58 @@ class RuleRead(MidonetRead):
 
 
 class RuleWrite(MidonetWrite):
+    """"Expected format:
+
+    "rules": {UUID (Chain ID):
+           [{"id": UUID,
+             "jumpChainName": String,
+             "jumpChainId": UUID,
+             "natTargets": [{"addressFrom": String,
+                             "addressTo": String,
+                             "portFrom": Int,
+                             "portTo": Int}, ...],
+             "type": String,
+             "flowAction": String,
+             "requestId": UUID,
+             "limit": Int,
+             "condInvert": Bool,
+             "invDlDst": Bool,
+             "invDlSrc": Bool,
+             "invDlType": Bool,
+             "invInPorts": Bool,
+             "invOutPorts": Bool,
+             "invNwDst": Bool,
+             "invNwProto": Bool,
+             "invNwSrc": Bool,
+             "invNwTos": Bool,
+             "invPortGroup": Bool,
+             "invIpAddrGroupDst": Bool,
+             "invIpAddrGroupSrc": Bool,
+             "invTpDst": Bool,
+             "invTpSrc": Bool,
+             "matchForwardFlow": Bool,
+             "matchReturnFlow": Bool,
+             "dlDst": String,
+             "dlDstMask": String,
+             "dlSrc": String,
+             "dlSrcMask": String,
+             "dlType": String,
+             "inPorts": [UUID (Port ID)],
+             "outPorts": [UUID (Port ID)],
+             "nwDstAddress": String,
+             "nwDstLength": Int,
+             "nwProto": Int,
+             "nwSrcAddress": String,
+             "nwSrcLength": Int,
+             "nwTos": String,
+             "portGroup": UUID,
+             "ipAddrGroupDst": String,
+             "ipAddrGroupSrc": String,
+             "tpSrc": String,
+             "tpDst": String,
+             "fragmentPolicy": String
+            }, ...]}, ...,
+    """
 
     @property
     def key(self):
@@ -916,6 +1093,12 @@ class TunnelZoneRead(MidonetRead):
 
 
 class TunnelZoneWrite(MidonetWrite):
+    """Expected format:
+
+    "tunnel_zones": [{"id": UUID,
+                   "type": String,
+                   "name": String}, ...],
+    """
 
     @property
     def key(self):
@@ -940,6 +1123,12 @@ class TunnelZoneHostRead(MidonetRead):
 
 
 class TunnelZoneHostWrite(MidonetWrite):
+    """Expected format:
+
+    "tunnel_zone_hosts": {UUID (Tunnel Zone ID):
+                       [{"hostId": UUID,
+                         "ipAddress": String}, ...]}, ...
+    """
 
     @property
     def key(self):
@@ -1042,151 +1231,6 @@ class DataWriter(object):
         self.tzh = TunnelZoneHostWrite(data, dry_run=dry_run)
 
     def migrate(self):
-        """Create all the midonet objects
-
-        Expected input:
-
-        {
-         "hosts": [{"id": UUID,
-                    "name": String}, ...],
-         "host_interface_ports": {UUID (Host ID):
-                                  [{"portId": UUID,
-                                    "interfaceName": String}, ...]}, ...,
-         "tunnel_zones": [{"id": UUID,
-                           "type": String,
-                           "name": String}, ...],
-         "tunnel_zone_hosts": {UUID (Tunnel Zone ID):
-                               [{"hostId": UUID,
-                                 "ipAddress": String}, ...]}, ...
-         "chains": [{"id": UUID,
-                     "name": String,
-                     "tenantId": String}, ...],
-         "rules": {UUID (Chain ID):
-                   [{"id": UUID,
-                     "jumpChainName": String,
-                     "jumpChainId": UUID,
-                     "natTargets": [{"addressFrom": String,
-                                     "addressTo": String,
-                                     "portFrom": Int,
-                                     "portTo": Int}, ...],
-                     "type": String,
-                     "flowAction": String,
-                     "requestId": UUID,
-                     "limit": Int,
-                     "condInvert": Bool,
-                     "invDlDst": Bool,
-                     "invDlSrc": Bool,
-                     "invDlType": Bool,
-                     "invInPorts": Bool,
-                     "invOutPorts": Bool,
-                     "invNwDst": Bool,
-                     "invNwProto": Bool,
-                     "invNwSrc": Bool,
-                     "invNwTos": Bool,
-                     "invPortGroup": Bool,
-                     "invIpAddrGroupDst": Bool,
-                     "invIpAddrGroupSrc": Bool,
-                     "invTpDst": Bool,
-                     "invTpSrc": Bool,
-                     "matchForwardFlow": Bool,
-                     "matchReturnFlow": Bool,
-                     "dlDst": String,
-                     "dlDstMask": String,
-                     "dlSrc": String,
-                     "dlSrcMask": String,
-                     "dlType": String,
-                     "inPorts": [UUID (Port ID)],
-                     "outPorts": [UUID (Port ID)],
-                     "nwDstAddress": String,
-                     "nwDstLength": Int,
-                     "nwProto": Int,
-                     "nwSrcAddress": String,
-                     "nwSrcLength": Int,
-                     "nwTos": String,
-                     "portGroup": UUID,
-                     "ipAddrGroupDst": String,
-                     "ipAddrGroupSrc": String,
-                     "tpSrc": String,
-                     "tpDst": String,
-                     "fragmentPolicy": String
-                    }, ...]}, ...,
-         "bridges": [{"id": UUID,
-                      "name": String,
-                      "tenantId": String,
-                      "adminStateUp": Bool,
-                      "inboundFilterId": UUID,
-                      "outboundFilterId":UUID}, ...],
-         "routers": [{"id": UUID,
-                      "name": String,
-                      "tenantId": String,
-                      "adminStateUp": Bool,
-                      "inboundFilterId": UUID,
-                      "outboundFilterId": UUID}, ...],
-         "routes": {UUID (Router ID):
-                     [{"id": UUID,
-                       "learned": Bool,
-                       "attributes": String,
-                       "dstNetworkAddr": String,
-                       "dstNetworkLength": Int,
-                       "srcNetworkAddr": String,
-                       "srcNetworkLength": Int,
-                       "nextHopGateway": String,
-                       "nextHopPort": UUID,
-                       "type": String,
-                       "weight": Int}, ...]}, ...,
-         "ports": {UUID (Device ID):
-                   [{"id": UUID,
-                     "deviceId": UUID,
-                     "adminStateUp": Bool,
-                     "inboundFilterId":, UUID,
-                     "outboundFilterId": UUID,
-                     "vifId": String,
-                     "vlanId": Int,
-                     "portAddress": String,
-                     "networkAddress": String,
-                     "networkLength": Int,
-                     "portMac": String,
-                     "type": String}, ...], ...},
-         "bgp": {UUID (Port ID):
-                 [{"id": UUID,
-                   "localAS": Int,
-                   "peerAS": Int,
-                   "peerAddr": String}, ...]}, ...,
-         "ad_routes": {UUID (BGP ID):
-                       [{"id": UUID,
-                         "nwPrefix": String,
-                         "prefixLength": Int}, ...], ...,
-         "ip_addr_groups": [{"id": UUID,
-                             "name": String,}, ...],
-         "ip_addr_group_addrs": {UUID (IP addr group ID):
-                                  [{"addr": String,
-                                    "version": Int}, ...]}, ...,
-         "port_groups": [{"id": UUID,
-                          "name": String,
-                          "tenantId": String,
-                          "stateful": Bool, ...],
-         "port_group_ports": {UUID (Port group ID):
-                              [UUID (Port ID)]}, ...
-         "dhcp_subnets": {UUID (Bridge Id):
-                          [{"subnet":
-                            {"defaultGateway": String,
-                             "serverAddr": String,
-                             "dnsServerAddrs": [String],
-                             "subnetPrefix": String,
-                             "subnetLength": Int,
-                             "interfaceMTU": Int,
-                             "enabled", Bool,
-                             "opt121Routes": [{"destinationPrefix": String,
-                                               "destinationLength": Int,
-                                               "gatewayAddr": String}, ...],
-                            },
-                           "hosts"; [{"name": String,
-                                      "ipAddr": String,
-                                      "macAddr": String}, ...]
-                          ], ...}, ...,
-         "port_links": {UUID [Port ID]: UUID [PeerPort ID]}
-        }
-        """
         LOG.info('Running MidoNet migration process')
         hosts = self.host.create_objects()
         tunnel_zones = self.tz.create_objects()
@@ -1202,7 +1246,7 @@ class DataWriter(object):
         self.dhcp.create_child_objects(bridges)
         self.iag_addr.create_child_objects(ip_addr_groups)
 
-        # Merge bridge and routers for ports
+        # Merge bridges and routers for ports
         device_map = bridges.copy()
         device_map.update(routers)
         ports = self.port.create_child_objects(device_map)
