@@ -467,7 +467,7 @@ class DhcpSubnetWrite(MidonetWrite):
                      [{"subnet":
                        {"defaultGateway": String,
                         "serverAddr": String,
-                        "dnsServerAddrs": [String],
+                        "dnsServerAddrs": String,
                         "subnetPrefix": String,
                         "subnetLength": Int,
                         "interfaceMTU": Int,
@@ -510,6 +510,43 @@ class DhcpSubnetWrite(MidonetWrite):
                 .name(obj['name'])
                 .ip_addr(obj['ipAddr'])
                 .mac_addr(obj['macAddr'])
+                .create)
+
+
+class HealthMonitorRead(MidonetRead):
+
+    @property
+    def read_fields(self):
+        return {"id", "type", "adminStateUp", "delay", "maxRetries", "timeout"}
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_health_monitors
+
+
+class HealthMonitorWrite(MidonetWrite):
+    """Expected format:
+
+    "health_monitors": [{"id": UUID,
+                         "type": String,
+                         "adminStateUp": Bool,
+                         "delay": Int,
+                         "maxRetries": Int,
+                         "timeout": Int}, ...],
+    """
+
+    @property
+    def key(self):
+        return "health_monitors"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_health_monitor()
+                .id(obj['id'])
+                .type(obj['type'])
+                .admin_state_up(obj['adminStateUp'])
+                .delay(obj['delay'])
+                .max_retries(obj['maxRetries'])
+                .timeout(obj['timeout'])
                 .create)
 
 
@@ -681,6 +718,134 @@ class LinkWrite(MidonetWrite):
 
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
             _create_data(self.mc.mn_api.link, link, port, peer_id)
+
+
+class LoadBalancerRead(MidonetRead):
+
+    @property
+    def read_fields(self):
+        return {"id", "routerId", "adminStateUp"}
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_load_balancers
+
+    def filter_objs(self, objs):
+        # Filter out LBs that are either not associated with a router created
+        # by Neutron.
+        n_router_ids = self._neutron_ids('routers')
+        objs = [o for o in objs if o.get_router_id() not in n_router_ids]
+        return objs
+
+
+class LoadBalancerWrite(MidonetWrite):
+    """Expected Format:
+
+    "load_balancers": [{"id": UUID,
+                        "routerId": UUID,
+                        "adminStateUp": Bool
+                       }, ...],
+    """
+
+    @property
+    def key(self):
+        return "load_balancers"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_load_balancer()
+                .id(obj['id'])
+                .admin_state_up(obj['adminStateUp'])
+                .create)
+
+
+class PoolRead(MidonetRead):
+
+    @property
+    def read_fields(self):
+        return {"id", "loadBalancerId", "lbMethod", "adminStateUp", "protocol",
+                "healthMonitorId"}
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_pools()
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('pools')
+
+
+class PoolWrite(MidonetWrite):
+    """Expected format:
+
+    "pools": {UUID (LoadBalancer ID):
+              [{"id": UUID,
+                "loadBalancerId": UUID,
+                "lbMethod": String,
+                "protocol": String,
+                "healthMonitorId": UUID",
+                "adminStateUp": Bool}, ...]}, ...,
+    """
+
+    @property
+    def key(self):
+        return "pools"
+
+    def add_to_child_dict(self, child_dict, obj):
+        child_dict[obj.get_id()] = obj
+
+    def create_child_f(self, obj, p_id, parents):
+        lb = _get_obj(self.mc.mn_api.get_load_balancer, p_id,
+                      cache_map=parents)
+        return (lb.add_pool()
+                .id(obj['id'])
+                .load_balancer_id(obj['loadBalancerId'])
+                .lb_method(obj['lbMethod'])
+                .protocol(obj['protocol'])
+                .health_monitor_id(obj['healthMonitorId'])
+                .admin_state_up(obj['adminStateUp'])
+                .create)
+
+
+class PoolMemberRead(MidonetRead):
+
+    @property
+    def read_fields(self):
+        return {"id", "poolId", "address", "adminStateUp", "protocolPort",
+                "weight"}
+
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_pool_members()
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('pool_members')
+
+
+class PoolMemberWrite(MidonetWrite):
+    """Expected format:
+
+    "pool_members": {UUID (Pool ID):
+                     [{"id": UUID,
+                       "poolId': UUID,
+                       "address": String,
+                       "protocolPort": Int,
+                       "weight": Int",
+                       "adminStateUp": Bool}, ...]}, ...,
+    """
+
+    @property
+    def key(self):
+        return "pool_members"
+
+    def create_child_f(self, obj, p_id, parents):
+        pool = _get_obj(self.mc.mn_api.get_pool, p_id, cache_map=parents)
+        return (pool.add_pool_member()
+                .id(obj['id'])
+                .pool_id(obj['poolId'])
+                .address(obj['address'])
+                .protocol_port(obj['protocolPort'])
+                .weight(obj['weight'])
+                .admin_state_up(obj['adminStateUp'])
+                .create)
 
 
 class PortRead(MidonetRead):
@@ -916,7 +1081,7 @@ class RouterRead(MidonetRead):
 
     @property
     def read_fields(self):
-        return {"id", "name", "tenantId", "adminStateUp",
+        return {"id", "name", "tenantId", "adminStateUp", "loadBalancerId",
                 "inboundFilterId", "outboundFilterId"}
 
     @property
@@ -936,7 +1101,8 @@ class RouterWrite(MidonetWrite):
               "tenantId": String,
               "adminStateUp": Bool,
               "inboundFilterId": UUID,
-              "outboundFilterId": UUID}, ...],
+              "outboundFilterId": UUID},
+              "loadBalancerId": UUID, ...],
     """
 
     @property
@@ -951,6 +1117,7 @@ class RouterWrite(MidonetWrite):
                 .inbound_filter_id(obj['inboundFilterId'])
                 .outbound_filter_id(obj['outboundFilterId'])
                 .admin_state_up(obj['adminStateUp'])
+                .load_balancer_id(obj['loadBalancerId'])
                 .create)
 
 
@@ -1142,6 +1309,48 @@ class TunnelZoneHostWrite(MidonetWrite):
                 .create)
 
 
+class VipRead(MidonetRead):
+
+    @property
+    def read_fields(self):
+        return {"id", "loadBalancerId", "poolId", "address", "protocolPort",
+                "sessionPersistence"}
+
+    @property
+    def get_resources_f(self):
+        return self.mc.mn_api.get_vips
+
+    @property
+    def exclude_ids(self):
+        return self._neutron_ids('vips')
+
+
+class VipWrite(MidonetWrite):
+    """Expected format:
+
+    "vips": [{"id": UUID,
+              "loadBalancerId": UUID,
+              "poolId": UUID,
+              "address": String,
+              "protocolPort": Int,
+              "sessionPersistence": String}, ...],
+    """
+
+    @property
+    def key(self):
+        return "vips"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_vip()
+                .id(obj['id'])
+                .load_balancer_id(obj['loadBalancerId'])
+                .pool_id(obj['poolId'])
+                .address(obj['address'])
+                .protocol_port(obj['protocolPort'])
+                .session_persistence(obj['sessionPersistence'])
+                .create)
+
+
 class DataReader(object):
 
     def __init__(self, nd):
@@ -1162,6 +1371,11 @@ class DataReader(object):
         self.ad_route = AdRouteRead(nd)
         self.hi_port = HostInterfacePortRead(nd)
         self.tzh = TunnelZoneHostRead(nd)
+        self.lb = LoadBalancerRead(nd)
+        self.hm = HealthMonitorRead(nd)
+        self.pool = PoolRead(nd)
+        self.pool_member = PoolMemberRead(nd)
+        self.vip = VipRead(nd)
 
     def prepare(self):
         # Top level objects
@@ -1172,8 +1386,14 @@ class DataReader(object):
         pg_objs, pg_dicts = self.port_group.create_resource_data()
         router_objs, router_dicts = self.router.create_resource_data()
         tz_objs, tz_dicts = self.tz.create_resource_data()
+        lb_objs, lb_dicts = self.lb.create_resource_data()
+        _, hm_dicts = self.hm.create_resource_data()
+        _, vip_dicts = self.vip.create_resource_data()
 
         # Sub-resources
+        pool_map, pool_objs = self.pool.create_sub_resource_data(lb_objs)
+        pool_member_map, _ = self.pool_member.create_sub_resource_data(
+            pool_objs)
         port_map, port_objs = self.port.create_sub_resource_data(
             bridge_objs + router_objs)
         bgp_map, bgp_objs = self.bgp.create_sub_resource_data(port_objs)
@@ -1192,10 +1412,14 @@ class DataReader(object):
             "bridges": bridge_dicts,
             "chains": chain_dicts,
             "dhcp_subnets": dhcp_map,
+            "health_monitors": hm_dicts,
             "hosts": host_dicts,
             "host_interface_ports": hip_map,
             "ip_addr_groups": ipag_dicts,
             "ip_addr_group_addrs": iag_addr_map,
+            "load_balancers": lb_dicts,
+            "pools": pool_map,
+            "pool_members": pool_member_map,
             "port_groups": pg_dicts,
             "port_group_ports": pgp_map,
             "ports": port_map,
@@ -1204,7 +1428,8 @@ class DataReader(object):
             "routes": route_map,
             "rules": rule_map,
             "tunnel_zones": tz_dicts,
-            "tunnel_zone_hosts": tzh_map
+            "tunnel_zone_hosts": tzh_map,
+            "vips": vip_dicts
         }
 
 
@@ -1229,18 +1454,29 @@ class DataWriter(object):
         self.ad_route = AdRouteWrite(data, dry_run=dry_run)
         self.hi_port = HostInterfacePortWrite(data, dry_run=dry_run)
         self.tzh = TunnelZoneHostWrite(data, dry_run=dry_run)
+        self.lb = LoadBalancerWrite(data, dry_run=dry_run)
+        self.hm = HealthMonitorWrite(data, dry_run=dry_run)
+        self.pool = PoolWrite(data, dry_run=dry_run)
+        self.pool_member = PoolMemberWrite(data, dry_run=dry_run)
+        self.vip = VipWrite(data, dry_run=dry_run)
 
     def migrate(self):
         LOG.info('Running MidoNet migration process')
         hosts = self.host.create_objects()
         tunnel_zones = self.tz.create_objects()
+        lbs = self.lb.create_objects()
         chains = self.chain.create_objects()
         bridges = self.bridge.create_objects()
         routers = self.router.create_objects()
         ip_addr_groups = self.ip_addr_group.create_objects()
         port_groups = self.port_group.create_objects()
+        self.hm.create_objects()
 
         # Sub-resources
+        pools = self.pool.create_child_objects(lbs)
+        self.vip.create_objects()
+        self.pool_member.create_child_objects(pools)
+
         self.bgp.create_child_objects(routers)
         self.ad_route.create_child_objects(routers)
         self.dhcp.create_child_objects(bridges)
