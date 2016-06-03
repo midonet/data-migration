@@ -111,8 +111,32 @@ def _create_data(f, obj, *args, **kwargs):
             LOG.warn("Already exists: " + str(obj))
 
 
+class ProviderRouterMixin(object):
+
+    def __init__(self):
+        self._pr_port_map = {}
+
+    @property
+    def provider_router_ports(self):
+        if not self._pr_port_map:
+            routers = self._get_resources('routers')
+            port_map = self._get_resources('ports')
+            for router in routers:
+                if router['name'] == const.PROVIDER_ROUTER_NAME:
+                    ports = port_map[router['id']]
+                    for port in ports:
+                        self._pr_port_map[port['id']] = port
+                    break
+
+        return self._pr_port_map
+
+    @property
+    def provider_router_port_ids(self):
+        return self.provider_router_ports.keys()
+
+
 @six.add_metaclass(abc.ABCMeta)
-class Midonet(object):
+class MidonetRead(object):
 
     def __init__(self, nd):
         self.mc = context.get_read_context()
@@ -175,7 +199,83 @@ class Midonet(object):
         return set()
 
 
-class AdRoute(Midonet):
+@six.add_metaclass(abc.ABCMeta)
+class MidonetWrite(ProviderRouterMixin):
+
+    def __init__(self, data, dry_run=False):
+        self.mc = context.get_write_context()
+        self.data = data
+        self.dry_run = dry_run
+        super(MidonetWrite, self).__init__()
+
+    def _get_resources(self, key):
+        mido_data = self.data['midonet']
+        return mido_data[key]
+
+    def _get_port_device_id(self, port_id):
+        port_map = self._get_resources('ports')
+        for device_id, ports in iter(port_map.items()):
+            for port in ports:
+                if port['id'] == port_id:
+                    return device_id
+        return None
+
+    def create_objects(self):
+        results = {}
+        objs = self._get_resources(self.key)
+        for obj in objs:
+            LOG.debug("Creating " + self.key + " obj " + str(obj))
+            obj_id = obj['id']
+            if not self.dry_run:
+                results[obj_id] = _create_data(self.create_f(obj), obj)
+        return results
+
+    def create_child_objects(self, parents):
+        results = {}
+        obj_map = self._get_resources(self.key)
+        for p_id, objs in iter(obj_map.items()):
+            for obj in objs:
+                if self.skip_create_child(obj, p_id):
+                    continue
+
+                LOG.debug("Creating " + self.key + " child obj " + str(obj))
+                if self.dry_run:
+                    continue
+
+                o = _create_data(self.create_child_f(obj, p_id, parents), obj)
+                g_children = self.get_grand_children(obj)
+                if g_children:
+                    for g_child in g_children:
+                        LOG.debug("Creating sub child obj " + str(g_child))
+                        _create_data(self.create_grand_child_f(g_child, o),
+                                     g_child)
+                self.add_to_child_dict(results, o)
+        return results
+
+    @property
+    def key(self):
+        return ""
+
+    def create_f(self, obj):
+        return None
+
+    def create_child_f(self, obj, p_id, parents):
+        return None
+
+    def get_grand_children(self, obj):
+        return []
+
+    def create_grand_child_f(self, obj, parent):
+        return None
+
+    def add_to_child_dict(self, child_dict, obj):
+        pass
+
+    def skip_create_child(self, obj, p_id):
+        return False
+
+
+class AdRouteRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -185,7 +285,31 @@ class AdRoute(Midonet):
         return p_obj.get_ad_routes()
 
 
-class Bgp(Midonet):
+class AdRouteWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "ad_routes"
+
+    def _get_bgp_router_id(self, bgp_id):
+        bgp_map = self._get_resources('bgp')
+        for port_id, bgp_list in iter(bgp_map.items()):
+            for bgp in bgp_list:
+                if bgp['id'] == bgp_id:
+                    return self._get_port_device_id(port_id)
+        return None
+
+    def create_child_f(self, obj, p_id, parents):
+        router_id = self._get_bgp_router_id(p_id)
+        router = _get_obj(self.mc.mn_api.get_router, router_id,
+                          cache_map=parents)
+        return (router.add_bgp_network()
+                .id(obj['id'])
+                .subnet_address(obj['nwPrefix'])
+                .subnet_length(obj['prefixLength']).create)
+
+
+class BgpRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -198,7 +322,29 @@ class Bgp(Midonet):
         return p_obj.get_type() != const.RTR_PORT_TYPE
 
 
-class Bridge(Midonet):
+class BgpWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "bgp"
+
+    def create_child_f(self, obj, p_id, parents):
+        router_id = self._get_port_device_id(p_id)
+        router = _get_obj(self.mc.mn_api.get_router, router_id,
+                          cache_map=parents)
+
+        # Update router with local AS
+        LOG.debug("Updating router " + router_id + " with asn " +
+                  str(obj['localAS']))
+        router.asn(obj['localAS']).update()
+
+        return (router.add_bgp_peer()
+                .id(obj['id'])
+                .asn(obj['peerAS'])
+                .address(obj['peerAddr']).create)
+
+
+class BridgeRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -214,7 +360,24 @@ class Bridge(Midonet):
         return self._neutron_ids('networks')
 
 
-class Chain(Midonet):
+class BridgeWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "bridges"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_bridge()
+                .id(obj['id'])
+                .name(obj['name'])
+                .tenant_id(obj['tenantId'])
+                .inbound_filter_id(obj['inboundFilterId'])
+                .outbound_filter_id(obj['outboundFilterId'])
+                .admin_state_up(obj['adminStateUp'])
+                .create)
+
+
+class ChainRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -228,7 +391,21 @@ class Chain(Midonet):
         return [c for c in objs if not _is_neutron_chain(c)]
 
 
-class DhcpSubnet(Midonet):
+class ChainWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "chains"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_chain()
+                .id(obj['id'])
+                .name(obj['name'])
+                .tenant_id(obj['tenantId'])
+                .create)
+
+
+class DhcpSubnetRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -254,7 +431,39 @@ class DhcpSubnet(Midonet):
         return subnet_list
 
 
-class Host(Midonet):
+class DhcpSubnetWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "dhcp_subnets"
+
+    def create_child_f(self, obj, p_id, parents):
+        bridge = _get_obj(self.mc.mn_api.get_bridge, p_id,
+                          cache_map=parents)
+        s = obj['subnet']
+        return (bridge.add_dhcp_subnet()
+                .default_gateway(s['defaultGateway'])
+                .server_addr(s['serverAddr'])
+                .dns_server_addrs(s['dnsServerAddrs'])
+                .subnet_prefix(s['subnetPrefix'])
+                .subnet_length(s['subnetLength'])
+                .interface_mtu(s['interfaceMTU'])
+                .opt121_routes(s['opt121Routes'])
+                .enabled(s['enabled'])
+                .create)
+
+    def get_grand_children(self, obj):
+        return obj['hosts']
+
+    def create_grand_child_f(self, obj, parent):
+        return (parent.add_dhcp_host()
+                .name(obj['name'])
+                .ip_addr(obj['ipAddr'])
+                .mac_addr(obj['macAddr'])
+                .create)
+
+
+class HostRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -265,7 +474,20 @@ class Host(Midonet):
         return self.mc.mn_api.get_hosts
 
 
-class HostInterfacePort(Midonet):
+class HostWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "hosts"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_host()
+                .id(obj['id'])
+                .name(obj['name'])
+                .create)
+
+
+class HostInterfacePortRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -275,7 +497,33 @@ class HostInterfacePort(Midonet):
         return p_obj.get_ports()
 
 
-class IpAddrGroup(Midonet):
+class HostInterfacePortWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "host_interface_ports"
+
+    def skip_create_child(self, obj, p_id):
+        pr_port_ids = self.provider_router_port_ids
+        if obj['portId'] in pr_port_ids:
+            LOG.debug("Skipping Provider Router port binding " + str(obj))
+            return True
+
+        if _is_lb_hm_interface(obj['interfaceName']):
+            LOG.debug("Skipping HM port binding " + str(obj))
+            return True
+
+        return False
+
+    def create_child_f(self, obj, p_id, parents):
+        host = _get_obj(self.mc.mn_api.get_host, p_id, cache_map=parents)
+        return (host.add_host_interface_port()
+                .port_id(obj['portId'])
+                .interface_name(obj['interfaceName'])
+                .create)
+
+
+class IpAddrGroupRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -290,7 +538,20 @@ class IpAddrGroup(Midonet):
         return self._neutron_ids('security-groups')
 
 
-class IpAddrGroupAddr(Midonet):
+class IpAddrGroupWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "ip_addr_groups"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_ip_addr_group()
+                .id(obj['id'])
+                .name(obj['name'])
+                .create)
+
+
+class IpAddrGroupAddrRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -311,7 +572,44 @@ class IpAddrGroupAddr(Midonet):
         return _to_ipv4
 
 
-class Port(Midonet):
+class IpAddrGroupAddrWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "ip_addr_group_addrs"
+
+    def create_child_f(self, obj, p_id, parents):
+        iag = _get_obj(self.mc.mn_api.get_ip_addr_group, p_id,
+                       cache_map=parents)
+        version = obj['version']
+        if version == 4:
+            return iag.add_ipv4_addr().addr(obj['addr']).create
+        else:
+            return iag.add_ipv6_addr().addr(obj['addr']).create
+
+
+class LinkWrite(MidonetWrite):
+
+    def link_ports(self, ports):
+        links = self._get_resources('port_links')
+        port_ids = self.provider_router_port_ids
+        for port_id, peer_id in iter(links.items()):
+            link = (port_id, peer_id)
+
+            # Skip the provider router ports
+            if port_id in port_ids or peer_id in port_ids:
+                LOG.debug("Skipping Provider Router port linking " + str(link))
+                continue
+
+            LOG.debug("Linking ports " + str(link))
+            if self.dry_run:
+                continue
+
+            port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
+            _create_data(self.mc.mn_api.link, link, port, peer_id)
+
+
+class PortRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -319,9 +617,8 @@ class Port(Midonet):
                 "outboundFilterId", "vifId", "vlanId", "portAddress",
                 "networkAddress", "networkLength", "portMac", "type"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_ports
+    def get_sub_resources(self, p_obj):
+        return p_obj.get_ports()
 
     def filter_objs(self, objs):
         """We want to exclude the following ports:
@@ -333,7 +630,51 @@ class Port(Midonet):
         return [p for p in objs if not (_is_neutron_port(p, n_ports))]
 
 
-class PortGroup(Midonet):
+class PortWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "ports"
+
+    def add_to_child_dict(self, child_dict, obj):
+        child_dict[obj.get_id()] = obj
+
+    def create_child_f(self, obj, p_id, parents):
+        pid = obj['id']
+        ptype = obj['type']
+        device_id = obj['deviceId']
+        if ptype == const.BRG_PORT_TYPE:
+            bridge = _get_obj(self.mc.mn_api.get_bridge, device_id,
+                              cache_map=parents)
+            return (self.mc.mn_api.add_bridge_port(bridge)
+                    .id(pid)
+                    .type(ptype)
+                    .admin_state_up(obj['adminStateUp'])
+                    .inbound_filter_id(obj['inboundFilterId'])
+                    .outbound_filter_id(obj['outboundFilterId'])
+                    .vif_id(obj['vifId'])
+                    .vlan_id(obj['vlanId'])
+                    .create)
+        elif ptype == const.RTR_PORT_TYPE:
+            router = _get_obj(self.mc.mn_api.get_router, device_id,
+                              cache_map=parents)
+            return (self.mc.mn_api.add_router_port(router)
+                    .id(pid)
+                    .type(ptype)
+                    .admin_state_up(obj['adminStateUp'])
+                    .inbound_filter_id(obj['inboundFilterId'])
+                    .outbound_filter_id(obj['outboundFilterId'])
+                    .port_address(obj['portAddress'])
+                    .network_address(obj['networkAddress'])
+                    .network_length(obj['networkLength'])
+                    .port_mac(obj['portMac'])
+                    .create)
+        else:
+            raise ValueError("Unknown port type " + ptype +
+                             " detected for port " + pid)
+
+
+class PortGroupRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -344,7 +685,22 @@ class PortGroup(Midonet):
         return self.mc.mn_api.get_port_groups
 
 
-class PortGroupPort(Midonet):
+class PortGroupWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "port_groups"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_port_group()
+                .id(obj['id'])
+                .name(obj['name'])
+                .tenant_id(obj['tenantId'])
+                .stateful(obj['stateful'])
+                .create)
+
+
+class PortGroupPortRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -361,7 +717,20 @@ class PortGroupPort(Midonet):
         return _extract_port_id
 
 
-class Route(Midonet):
+class PortGroupPortWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "port_group_ports"
+
+    def create_child_f(self, obj, p_id, parents):
+        pg = _get_obj(self.mc.mn_api.get_port_group, p_id, cache_map=parents)
+        return (pg.add_port_group_port()
+                .port_id(obj)
+                .create)
+
+
+class RouteRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -378,7 +747,56 @@ class Route(Midonet):
                 if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
 
 
-class Router(Midonet):
+class RouteWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "routes"
+
+    def _port_routes(self, router_id):
+        port_map = self._get_resources('ports')
+        ports = port_map[router_id]
+        route_map = {}
+        for port in ports:
+            route_map[port['id']] = port['portAddress']
+        return route_map
+
+    def skip_create_child(self, obj, parent_id):
+        if obj['learned']:
+            LOG.debug("Skipping learned route " + str(obj))
+            return True
+
+        # Skip the port routes
+        next_hop_port = obj['nextHopPort']
+        proute_map = self._port_routes(parent_id)
+        if (obj['srcNetworkAddr'] == "0.0.0.0" and
+            obj['srcNetworkLength'] == 0 and
+            obj['dstNetworkLength'] == 32 and
+            next_hop_port and
+            obj['dstNetworkAddr'] == proute_map.get(next_hop_port)):
+            LOG.debug("Skipping port route " + str(obj))
+            return True
+
+        return False
+
+    def create_child_f(self, obj, p_id, parents):
+        # TODO(RYU): HM routes?
+        router = _get_obj(self.mc.mn_api.get_router, p_id,
+                          cache_map=parents)
+        return (router.add_route()
+                .id(obj['id'])
+                .type(obj['type'])
+                .attributes(obj.get('attributes'))
+                .dst_network_addr(obj['dstNetworkAddr'])
+                .dst_network_length(obj['srcNetworkLength'])
+                .src_network_addr(obj['srcNetworkAddr'])
+                .src_network_length(obj['srcNetworkLength'])
+                .next_hop_gateway(obj['nextHopGateway'])
+                .next_hop_port(obj['nextHopPort'])
+                .weight(obj['weight']).create)
+
+
+class RouterRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -394,7 +812,24 @@ class Router(Midonet):
         return self._neutron_ids('routers')
 
 
-class Rule(Midonet):
+class RouterWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "routers"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_router()
+                .id(obj['id'])
+                .name(obj['name'])
+                .tenant_id(obj['tenantId'])
+                .inbound_filter_id(obj['inboundFilterId'])
+                .outbound_filter_id(obj['outboundFilterId'])
+                .admin_state_up(obj['adminStateUp'])
+                .create)
+
+
+class RuleRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -414,7 +849,62 @@ class Rule(Midonet):
         return p_obj.get_rules()
 
 
-class TunnelZone(Midonet):
+class RuleWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "rules"
+
+    def create_child_f(self, obj, p_id, parents):
+        # TODO(RYU): Trace req?
+        chain = _get_obj(self.mc.mn_api.get_chain, p_id, cache_map=parents)
+        return (chain.add_rule()
+                .id(obj['id'])
+                .chain_id(p_id)
+                .jump_chain_name(obj.get('jumpChainName'))
+                .jump_chain_id(obj.get('jumpChainName'))
+                .nat_targets(obj.get('natTargets'))
+                .type(obj['type'])
+                .flow_action(obj.get('flowAction'))
+                .cond_invert(obj['condInvert'])
+                .match_forward_flow(obj['matchForwardFlow'])
+                .match_return_flow(obj['matchReturnFlow'])
+                .port_group(obj['portGroup'])
+                .inv_port_group(obj['invPortGroup'])
+                .ip_addr_group_dst(obj['ipAddrGroupDst'])
+                .inv_ip_addr_group_dst(obj['invIpAddrGroupDst'])
+                .ip_addr_group_src(obj['ipAddrGroupSrc'])
+                .inv_ip_addr_group_src(obj['invIpAddrGroupSrc'])
+                .tp_dst(obj['tpDst'])
+                .inv_tp_dst(obj['invTpDst'])
+                .tp_src(obj['tpSrc'])
+                .inv_tp_src(obj['invTpSrc'])
+                .dl_dst(obj['dlDst'])
+                .inv_dl_dst(obj['invDlDst'])
+                .dl_src(obj['dlSrc'])
+                .inv_dl_src(obj['invDlSrc'])
+                .dl_dst_mask(obj['dlDstMask'])
+                .dl_src_mask(obj['dlSrcMask'])
+                .nw_dst_address(obj['nwDstAddress'])
+                .nw_dst_length(obj['nwDstLength'])
+                .inv_nw_dst(obj['invNwDst'])
+                .nw_src_address(obj['nwSrcAddress'])
+                .nw_src_length(obj['nwSrcLength'])
+                .inv_nw_src(obj['invNwSrc'])
+                .in_ports(obj['inPorts'])
+                .inv_in_ports(obj['invInPorts'])
+                .out_ports(obj['outPorts'])
+                .inv_out_ports(obj['invOutPorts'])
+                .dl_type(obj['dlType'])
+                .inv_dl_type(obj['invDlType'])
+                .nw_tos(obj['nwTos'])
+                .inv_nw_tos(obj['invNwTos'])
+                .nw_proto(obj['nwProto'])
+                .inv_nw_proto(obj['invNwProto'])
+                .fragment_policy(obj['fragmentPolicy']).create)
+
+
+class TunnelZoneRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -425,7 +915,21 @@ class TunnelZone(Midonet):
         return self.mc.mn_api.get_tunnel_zones
 
 
-class TunnelZoneHost(Midonet):
+class TunnelZoneWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "tunnel_zones"
+
+    def create_f(self, obj):
+        return (self.mc.mn_api.add_tunnel_zone()
+                .id(obj['id'])
+                .type(obj['type'])
+                .name(obj['name'])
+                .create)
+
+
+class TunnelZoneHostRead(MidonetRead):
 
     @property
     def read_fields(self):
@@ -435,26 +939,40 @@ class TunnelZoneHost(Midonet):
         return p_obj.get_hosts()
 
 
+class TunnelZoneHostWrite(MidonetWrite):
+
+    @property
+    def key(self):
+        return "tunnel_zone_hosts"
+
+    def create_child_f(self, obj, p_id, parents):
+        tz = _get_obj(self.mc.mn_api.get_tunnel_zone, p_id, cache_map=parents)
+        return (tz.add_tunnel_zone_host()
+                .host_id(obj['hostId'])
+                .ip_address(obj['ipAddress'])
+                .create)
+
+
 class DataReader(object):
 
     def __init__(self, nd):
-        self.host = Host(nd)
-        self.tz = TunnelZone(nd)
-        self.bridge = Bridge(nd)
-        self.dhcp = DhcpSubnet(nd)
-        self.router = Router(nd)
-        self.chain = Chain(nd)
-        self.rule = Rule(nd)
-        self.ip_addr_group = IpAddrGroup(nd)
-        self.iag_addr = IpAddrGroupAddr(nd)
-        self.port_group = PortGroup(nd)
-        self.port = Port(nd)
-        self.pgp = PortGroupPort(nd)
-        self.route = Route(nd)
-        self.bgp = Bgp(nd)
-        self.ad_route = AdRoute(nd)
-        self.hi_port = HostInterfacePort(nd)
-        self.tzh = TunnelZoneHost(nd)
+        self.host = HostRead(nd)
+        self.tz = TunnelZoneRead(nd)
+        self.bridge = BridgeRead(nd)
+        self.dhcp = DhcpSubnetRead(nd)
+        self.router = RouterRead(nd)
+        self.chain = ChainRead(nd)
+        self.rule = RuleRead(nd)
+        self.ip_addr_group = IpAddrGroupRead(nd)
+        self.iag_addr = IpAddrGroupAddrRead(nd)
+        self.port_group = PortGroupRead(nd)
+        self.port = PortRead(nd)
+        self.pgp = PortGroupPortRead(nd)
+        self.route = RouteRead(nd)
+        self.bgp = BgpRead(nd)
+        self.ad_route = AdRouteRead(nd)
+        self.hi_port = HostInterfacePortRead(nd)
+        self.tzh = TunnelZoneHostRead(nd)
 
     def prepare(self):
         # Top level objects
@@ -467,7 +985,8 @@ class DataReader(object):
         tz_objs, tz_dicts = self.tz.create_resource_data()
 
         # Sub-resources
-        port_objs, port_dicts = self.port.create_resource_data()
+        port_map, port_objs = self.port.create_sub_resource_data(
+            bridge_objs + router_objs)
         bgp_map, bgp_objs = self.bgp.create_sub_resource_data(port_objs)
         ar_map, _ = self.ad_route.create_sub_resource_data(bgp_objs)
         dhcp_map, _ = self.dhcp.create_sub_resource_data(bridge_objs)
@@ -490,7 +1009,7 @@ class DataReader(object):
             "ip_addr_group_addrs": iag_addr_map,
             "port_groups": pg_dicts,
             "port_group_ports": pgp_map,
-            "ports": port_dicts,
+            "ports": port_map,
             "port_links": _get_port_links(port_objs),
             "routers": router_dicts,
             "routes": route_map,
@@ -503,481 +1022,24 @@ class DataReader(object):
 class DataWriter(object):
 
     def __init__(self, data, dry_run=False):
-        self.mc = context.get_write_context()
-        self.data = data
-        self.dry_run = dry_run
-        self._pr_port_map = {}
-
-    def _provider_router_ports(self):
-        if not self._pr_port_map:
-            routers = self._get_resources('routers')
-            for router in routers:
-                if router['name'] == const.PROVIDER_ROUTER_NAME:
-                    pr_id = router['id']
-                    ports = self._get_resources('ports')
-                    for port in ports:
-                        if port['deviceId'] == pr_id:
-                            self._pr_port_map[port['id']] = port
-                    break
-
-        return self._pr_port_map
-
-    def _get_resources(self, key):
-        mido_data = self.data['midonet']
-        return mido_data(key)
-
-    def _create_hosts(self):
-        results = {}
-        hosts = self._get_resources('hosts')
-        for h in hosts:
-            LOG.debug("Creating host " + str(h))
-            hid = h['id']
-            f = (self.mc.mn_api.add_host()
-                               .id(hid)
-                               .name(h['name'])
-                               .create)
-            if not self.dry_run:
-                results[hid] = _create_data(f, h)
-        return results
-
-    def _create_host_interface_ports(self, hosts):
-        host_interface_ports = self._get_resources('host_interface_ports')
-        port_ids = self._pr_port_map.keys()
-        for host_id, hiports in iter(host_interface_ports.items()):
-            for hiport in hiports:
-                port_id = hiport['portId']
-
-                # Skip the provider router ports
-                if port_id in port_ids:
-                    LOG.debug("Skipping Provider Router port binding " +
-                              str(port_id))
-                    continue
-
-                interface_name = hiport['interfaceName']
-                if _is_lb_hm_interface(interface_name):
-                    LOG.debug("Skipping HM port binding " + str(hiport))
-                    continue
-
-                LOG.debug("Creating host interface port " + str(hiport))
-                if self.dry_run:
-                    continue
-
-                host = _get_obj(self.mc.mn_api.get_host, host_id,
-                                cache_map=hosts)
-                f = (host.add_host_interface_port()
-                     .port_id(port_id)
-                     .interface_name(interface_name)
-                     .create)
-                _create_data(f, hiport)
-
-    def _create_chains(self):
-        results = {}
-        chains = self._get_resources('chains')
-        for chain in chains:
-            LOG.debug("Creating chain " + str(chain))
-            chain_id = chain['id']
-            f = (self.mc.mn_api.add_chain()
-                        .id(chain_id)
-                        .name(chain['name'])
-                        .tenant_id(chain['tenantId'])
-                        .create)
-            if not self.dry_run:
-                results[chain_id] = _create_data(f, chain)
-        return results
-
-    def _port_routes(self, router_id):
-        ports = self._get_resources('ports')
-        route_map = {}
-        for port in ports:
-            if port['deviceId'] == router_id:
-                route_map[port['id']] = port['portAddress']
-        return route_map
-
-    def _get_port_device_id(self, port_id):
-        ports = self._get_resources('ports')
-        return next(p['deviceId'] for p in ports if p['id'] == port_id)
-
-    def _create_bgp(self, routers):
-        bgp_map = self._get_resources('bgp')
-        for port_id, bgp_list in iter(bgp_map.items()):
-            for bgp in bgp_list:
-                LOG.debug("Creating BGP " + str(bgp) + " that was on port " +
-                          port_id)
-                if self.dry_run:
-                    continue
-
-                router_id = self._get_port_device_id(port_id)
-                router = _get_obj(self.mc.mn_api.get_router, router_id,
-                                  cache_map=routers)
-
-                # Update router with local AS
-                LOG.debug("Updating router " + router_id + " with asn " +
-                          str(bgp['localAS']))
-                router.asn(bgp['localAS']).update()
-
-                f = (router.add_bgp_peer()
-                     .id(bgp['id'])
-                     .asn(bgp['peerAS'])
-                     .address(bgp['peerAddr']).create)
-                _create_data(f, bgp)
-
-    def _get_bgp_router_id(self, bgp_id):
-        bgp_map = self._get_resources('bgp')
-        for port_id, bgp_list in iter(bgp_map.items()):
-            for bgp in bgp_list:
-                if bgp['id'] == bgp_id:
-                    return self._get_port_device_id(port_id)
-        return None
-
-    def _create_ad_route(self, routers):
-        ad_route_map = self._get_resources('ad_routes')
-        for bgp_id, ad_routes in iter(ad_route_map.items()):
-            for ad_route in ad_routes:
-                LOG.debug("Creating Ad route " + str(ad_route) + " for BGP " +
-                          bgp_id)
-                if self.dry_run:
-                    continue
-
-                router_id = self._get_bgp_router_id(bgp_id)
-                router = _get_obj(self.mc.mn_api.get_router, router_id,
-                                  cache_map=routers)
-
-                f = (router.add_bgp_network()
-                     .id(ad_route['id'])
-                     .subnet_address(ad_route['nwPrefix'])
-                     .subnet_length(ad_route['prefixLength']).create)
-                _create_data(f, ad_route)
-
-    def _create_routes(self, routers):
-        routes = self._get_resources('routes')
-        for router_id, routes in iter(routes.items()):
-            proute_map = self._port_routes(router_id)
-            for route in routes:
-                if route['learned']:
-                    LOG.debug("Skipping learned route " + str(route))
-                    continue
-
-                # Skip the port routes
-                next_hop_port = route['nextHopPort']
-                if (route['srcNetworkAddr'] == "0.0.0.0" and
-                        route['srcNetworkLength'] == 0 and
-                        route['dstNetworkLength'] == 32 and
-                        next_hop_port and
-                        route['dstNetworkAddr'] == proute_map.get(
-                            next_hop_port)):
-                    LOG.debug("Skipping port route " + str(route))
-                    continue
-
-                # TODO(RYU): HM routes?
-
-                LOG.debug("Creating route " + str(route) + " on router " +
-                          router_id)
-                if self.dry_run:
-                    continue
-
-                router = _get_obj(self.mc.mn_api.get_router, router_id,
-                                  cache_map=routers)
-                f = (router.add_route()
-                     .id(route['id'])
-                     .type(route['type'])
-                     .attributes(route.get('attributes'))
-                     .dst_network_addr(route['dstNetworkAddr'])
-                     .dst_network_length(route['srcNetworkLength'])
-                     .src_network_addr(route['srcNetworkAddr'])
-                     .src_network_length(route['srcNetworkLength'])
-                     .next_hop_gateway(route['nextHopGateway'])
-                     .next_hop_port(next_hop_port)
-                     .weight(route['weight']).create)
-                _create_data(f, route)
-
-    def _create_rules(self, chains):
-        chain_rules = self._get_resources('rules')
-        for chain_id, rules in iter(chain_rules.items()):
-            for rule in rules:
-                LOG.debug("Creating rule " + str(rule) + " on chain " +
-                          chain_id)
-                if self.dry_run:
-                    continue
-
-                # TODO(RYU): Trace req?
-                chain = _get_obj(self.mc.mn_api.get_chain, chain_id,
-                                 cache_map=chains)
-                f = (chain.add_rule()
-                     .id(rule['id'])
-                     .chain_id(chain_id)
-                     .jump_chain_name(rule.get('jumpChainName'))
-                     .jump_chain_id(rule.get('jumpChainName'))
-                     .nat_targets(rule.get('natTargets'))
-                     .type(rule['type'])
-                     .flow_action(rule.get('flowAction'))
-                     .cond_invert(rule['condInvert'])
-                     .match_forward_flow(rule['matchForwardFlow'])
-                     .match_return_flow(rule['matchReturnFlow'])
-                     .port_group(rule['portGroup'])
-                     .inv_port_group(rule['invPortGroup'])
-                     .ip_addr_group_dst(rule['ipAddrGroupDst'])
-                     .inv_ip_addr_group_dst(rule['invIpAddrGroupDst'])
-                     .ip_addr_group_src(rule['ipAddrGroupSrc'])
-                     .inv_ip_addr_group_src(rule['invIpAddrGroupSrc'])
-                     .tp_dst(rule['tpDst'])
-                     .inv_tp_dst(rule['invTpDst'])
-                     .tp_src(rule['tpSrc'])
-                     .inv_tp_src(rule['invTpSrc'])
-                     .dl_dst(rule['dlDst'])
-                     .inv_dl_dst(rule['invDlDst'])
-                     .dl_src(rule['dlSrc'])
-                     .inv_dl_src(rule['invDlSrc'])
-                     .dl_dst_mask(rule['dlDstMask'])
-                     .dl_src_mask(rule['dlSrcMask'])
-                     .nw_dst_address(rule['nwDstAddress'])
-                     .nw_dst_length(rule['nwDstLength'])
-                     .inv_nw_dst(rule['invNwDst'])
-                     .nw_src_address(rule['nwSrcAddress'])
-                     .nw_src_length(rule['nwSrcLength'])
-                     .inv_nw_src(rule['invNwSrc'])
-                     .in_ports(rule['inPorts'])
-                     .inv_in_ports(rule['invInPorts'])
-                     .out_ports(rule['outPorts'])
-                     .inv_out_ports(rule['invOutPorts'])
-                     .dl_type(rule['dlType'])
-                     .inv_dl_type(rule['invDlType'])
-                     .nw_tos(rule['nwTos'])
-                     .inv_nw_tos(rule['invNwTos'])
-                     .nw_proto(rule['nwProto'])
-                     .inv_nw_proto(rule['invNwProto'])
-                     .fragment_policy(rule['fragmentPolicy']).create)
-
-                _create_data(f, rule)
-
-    def _create_bridges(self):
-        results = {}
-        bridges = self._get_resources('bridges')
-        for bridge in bridges:
-            LOG.debug("Creating bridge " + str(bridge))
-            f = (self.mc.mn_api.add_bridge()
-                        .id(bridge['id'])
-                        .name(bridge['name'])
-                        .tenant_id(bridge['tenantId'])
-                        .inbound_filter_id(bridge['inboundFilterId'])
-                        .outbound_filter_id(bridge['outboundFilterId'])
-                        .admin_state_up(bridge['adminStateUp'])
-                        .create)
-            if not self.dry_run:
-                results[bridge['id']] = _create_data(f, bridge)
-        return results
-
-    def _create_routers(self):
-        results = {}
-        routers = self._get_resources('routers')
-        for router in routers:
-            LOG.debug("Creating router " + str(router))
-            f = (self.mc.mn_api.add_router()
-                        .id(router['id'])
-                        .name(router['name'])
-                        .tenant_id(router['tenantId'])
-                        .inbound_filter_id(router['inboundFilterId'])
-                        .outbound_filter_id(router['outboundFilterId'])
-                        .admin_state_up(router['adminStateUp'])
-                        .create)
-            if not self.dry_run:
-                results[router['id']] = _create_data(f, router)
-        return results
-
-    def _create_dhcp_subnets(self, bridges):
-        dhcp_subnets = self._get_resources('dhcp_subnets')
-        for bid, subnets in iter(dhcp_subnets.items()):
-            for subnet in subnets:
-                LOG.debug("Creating dhcp subnet " + str(subnet) +
-                          " for bridge " + str(bid))
-                if self.dry_run:
-                    continue
-
-                # Putting this here instead of outside this loop only so that
-                # dry-run does not crap out.
-                bridge = _get_obj(self.mc.mn_api.get_bridge, bid,
-                                  cache_map=bridges)
-                s = subnet['subnet']
-                f = (bridge.add_dhcp_subnet()
-                     .default_gateway(s['defaultGateway'])
-                     .server_addr(s['serverAddr'])
-                     .dns_server_addrs(s['dnsServerAddrs'])
-                     .subnet_prefix(s['subnetPrefix'])
-                     .subnet_length(s['subnetLength'])
-                     .interface_mtu(s['interfaceMTU'])
-                     .opt121_routes(s['opt121Routes'])
-                     .enabled(s['enabled'])
-                     .create)
-                subnet_obj = _create_data(f, s)
-
-                hosts = subnet['hosts']
-                for h in hosts:
-                    f = (subnet_obj.add_dhcp_host()
-                         .name(h['name'])
-                         .ip_addr(h['ipAddr'])
-                         .mac_addr(h['macAddr'])
-                         .create)
-                    _create_data(f, h)
-
-    def _create_ports(self, bridges, routers):
-        results = {}
-        ports = self._get_resources('ports')
-        for port in ports:
-            LOG.debug("Creating port " + str(port))
-            if self.dry_run:
-                continue
-
-            pid = port['id']
-            ptype = port['type']
-            device_id = port['deviceId']
-            if ptype == const.BRG_PORT_TYPE:
-                bridge = _get_obj(self.mc.mn_api.get_bridge, device_id,
-                                  cache_map=bridges)
-                f = (self.mc.mn_api.add_bridge_port(bridge)
-                         .id(pid)
-                         .type(ptype)
-                         .admin_state_up(port['adminStateUp'])
-                         .inbound_filter_id(port['inboundFilterId'])
-                         .outbound_filter_id(port['outboundFilterId'])
-                         .vif_id(port['vifId'])
-                         .vlan_id(port['vlanId'])
-                         .create)
-            elif ptype == const.RTR_PORT_TYPE:
-                router = _get_obj(self.mc.mn_api.get_router, device_id,
-                                  cache_map=routers)
-                f = (self.mc.mn_api.add_router_port(router)
-                         .id(pid)
-                         .type(ptype)
-                         .admin_state_up(port['adminStateUp'])
-                         .inbound_filter_id(port['inboundFilterId'])
-                         .outbound_filter_id(port['outboundFilterId'])
-                         .port_address(port['portAddress'])
-                         .network_address(port['networkAddress'])
-                         .network_length(port['networkLength'])
-                         .port_mac(port['portMac'])
-                         .create)
-            else:
-                LOG.warn("Unknown port type " + ptype + " detected for port " +
-                         pid)
-                continue
-
-            results[pid] = _create_data(f, port)
-        return results
-
-    def _link_ports(self, ports):
-        links = self._get_resources('port_links')
-        port_ids = self._pr_port_map.keys()
-        for port_id, peer_id in iter(links.items()):
-            link = (port_id, peer_id)
-
-            # Skip the provider router ports
-            if port_id in port_ids or peer_id in port_ids:
-                LOG.debug("Skipping Provider Router port linking " + str(link))
-                continue
-
-            LOG.debug("Linking ports " + str(link))
-            if self.dry_run:
-                continue
-
-            port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
-            _create_data(self.mc.mn_api.link, link, port, peer_id)
-
-    def _create_ip_addr_groups(self):
-        results = {}
-        ip_addr_groups = self._get_resources('ip_addr_groups')
-        for ip_addr_group in ip_addr_groups:
-            LOG.debug("Creating IP address group " + str(ip_addr_group))
-            ip_addr_group_id = ip_addr_group['id']
-            f = (self.mc.mn_api.add_ip_addr_group()
-                        .id(ip_addr_group_id)
-                        .name(ip_addr_group['name'])
-                        .create)
-            if not self.dry_run:
-                results[ip_addr_group_id] = _create_data(f, ip_addr_group)
-        return results
-
-    def _create_ip_addr_group_addrs(self, ip_addr_groups):
-        ip_address_group_addrs = self._get_resources('ip_addr_group_addrs')
-        for addr_group_id, addrs in iter(ip_address_group_addrs.items()):
-            for addr in addrs:
-                LOG.debug("Creating ip addr group addr " + str(addr) +
-                          " for ip addr group " + addr_group_id)
-                if self.dry_run:
-                    continue
-
-                # Putting this here instead of outside this loop only so that
-                # dry-run does not crap out.
-                iag = _get_obj(self.mc.mn_api.get_ip_addr_group, addr_group_id,
-                               cache_map=ip_addr_groups)
-
-                version = addr['version']
-                if version == 4:
-                    f = iag.add_ipv4_addr().addr(addr['addr']).create
-                else:
-                    f = iag.add_ipv6_addr().addr(addr['addr']).create
-                _create_data(f, addr)
-
-    def _create_port_groups(self):
-        results = {}
-        port_groups = self._get_resources('port_groups')
-        for port_group in port_groups:
-            LOG.debug("Creating port group " + str(port_group))
-            pg_id = port_group['id']
-            f = (self.mc.mn_api.add_port_group()
-                        .id(pg_id)
-                        .name(port_group['name'])
-                        .tenant_id(port_group['tenantId'])
-                        .stateful(port_group['stateful'])
-                        .create)
-            if not self.dry_run:
-                results[pg_id] = _create_data(f, port_group)
-        return results
-
-    def _create_port_group_ports(self, port_groups):
-        port_group_ports = self._get_resources('port_group_ports')
-        for pg_id, pg_port_ids in iter(port_group_ports.items()):
-            for pg_port_id in pg_port_ids:
-                LOG.debug("Creating port group port " + str(pg_port_id) +
-                          " for port group " + pg_id)
-                if self.dry_run:
-                    continue
-
-                # Putting this here instead of outside this loop only so that
-                # dry-run does not crap out.
-                pg = _get_obj(self.mc.mn_api.get_port_group, pg_id,
-                              cache_map=port_groups)
-                f = pg.add_port_group_port().port_id(pg_port_id).create
-                _create_data(f, (pg_id, pg_port_id))
-
-    def _create_tunnel_zones(self):
-        results = {}
-        tzs = self._get_resources('tunnel_zones')
-        for tz in tzs:
-            LOG.debug("Creating tunnel zone " + str(tz))
-            tz_id = tz['id']
-            f = (self.mc.mn_api.add_tunnel_zone()
-                     .id(tz_id)
-                     .type(tz['type'])
-                     .name(tz['name'])
-                     .create)
-            if not self.dry_run:
-                results[tz_id] = _create_data(f, tz)
-        return results
-
-    def _create_tunnel_zone_hosts(self, tunnel_zones):
-        tunnel_zone_hosts = self._get_resources('tunnel_zone_hosts')
-        for tz_id, tzhs in iter(tunnel_zone_hosts.items()):
-            for tzh in tzhs:
-                LOG.debug("Creating tunnzel zone host " + str(tzh))
-                if self.dry_run:
-                    continue
-
-                tz = _get_obj(self.mc.mn_api.get_tunnel_zone, tz_id,
-                              cache_map=tunnel_zones)
-                f = (tz.add_tunnel_zone_host()
-                     .host_id(tzh['hostId'])
-                     .ip_address(tzh['ipAddress'])
-                     .create)
-                _create_data(f, tzh)
+        self.host = HostWrite(data, dry_run=dry_run)
+        self.tz = TunnelZoneWrite(data, dry_run=dry_run)
+        self.bridge = BridgeWrite(data, dry_run=dry_run)
+        self.dhcp = DhcpSubnetWrite(data, dry_run=dry_run)
+        self.router = RouterWrite(data, dry_run=dry_run)
+        self.chain = ChainWrite(data, dry_run=dry_run)
+        self.rule = RuleWrite(data, dry_run=dry_run)
+        self.ip_addr_group = IpAddrGroupWrite(data, dry_run=dry_run)
+        self.iag_addr = IpAddrGroupAddrWrite(data, dry_run=dry_run)
+        self.link = LinkWrite(data, dry_run=dry_run)
+        self.port_group = PortGroupWrite(data, dry_run=dry_run)
+        self.port = PortWrite(data, dry_run=dry_run)
+        self.pgp = PortGroupPortWrite(data, dry_run=dry_run)
+        self.route = RouteWrite(data, dry_run=dry_run)
+        self.bgp = BgpWrite(data, dry_run=dry_run)
+        self.ad_route = AdRouteWrite(data, dry_run=dry_run)
+        self.hi_port = HostInterfacePortWrite(data, dry_run=dry_run)
+        self.tzh = TunnelZoneHostWrite(data, dry_run=dry_run)
 
     def migrate(self):
         """Create all the midonet objects
@@ -1072,18 +1134,19 @@ class DataWriter(object):
                        "nextHopPort": UUID,
                        "type": String,
                        "weight": Int}, ...]}, ...,
-         "ports": [{"id": UUID,
-                    "deviceId": UUID,
-                    "adminStateUp": Bool,
-                    "inboundFilterId":, UUID,
-                    "outboundFilterId": UUID,
-                    "vifId": String,
-                    "vlanId": Int,
-                    "portAddress": String,
-                    "networkAddress": String,
-                    "networkLength": Int,
-                    "portMac": String,
-                    "type": String}, ...],
+         "ports": {UUID (Device ID):
+                   [{"id": UUID,
+                     "deviceId": UUID,
+                     "adminStateUp": Bool,
+                     "inboundFilterId":, UUID,
+                     "outboundFilterId": UUID,
+                     "vifId": String,
+                     "vlanId": Int,
+                     "portAddress": String,
+                     "networkAddress": String,
+                     "networkLength": Int,
+                     "portMac": String,
+                     "type": String}, ...], ...},
          "bgp": {UUID (Port ID):
                  [{"id": UUID,
                    "localAS": Int,
@@ -1125,25 +1188,31 @@ class DataWriter(object):
         }
         """
         LOG.info('Running MidoNet migration process')
-        hosts = self._create_hosts()
-        tunnel_zones = self._create_tunnel_zones()
-        chains = self._create_chains()
-        bridges = self._create_bridges()
-        routers = self._create_routers()
-        ip_addr_groups = self._create_ip_addr_groups()
-        port_groups = self._create_port_groups()
+        hosts = self.host.create_objects()
+        tunnel_zones = self.tz.create_objects()
+        chains = self.chain.create_objects()
+        bridges = self.bridge.create_objects()
+        routers = self.router.create_objects()
+        ip_addr_groups = self.ip_addr_group.create_objects()
+        port_groups = self.port_group.create_objects()
 
         # Sub-resources
-        self._create_bgp(routers)
-        self._create_ad_route(routers)
-        self._create_dhcp_subnets(bridges)
-        self._create_ip_addr_group_addrs(ip_addr_groups)
-        ports = self._create_ports(bridges, routers)
-        self._create_port_group_ports(port_groups)
-        self._create_rules(chains)
-        self._create_routes(routers)
-        self._link_ports(ports)
+        self.bgp.create_child_objects(routers)
+        self.ad_route.create_child_objects(routers)
+        self.dhcp.create_child_objects(bridges)
+        self.iag_addr.create_child_objects(ip_addr_groups)
+
+        # Merge bridge and routers for ports
+        device_map = bridges.copy()
+        device_map.update(routers)
+        ports = self.port.create_child_objects(device_map)
+
+        self.pgp.create_child_objects(port_groups)
+        self.rule.create_child_objects(chains)
+        self.route.create_child_objects(routers)
+
+        self.link.link_ports(ports)
 
         # Host Bindings
-        self._create_tunnel_zone_hosts(tunnel_zones)
-        self._create_host_interface_ports(hosts)
+        self.tzh.create_child_objects(tunnel_zones)
+        self.hi_port.create_child_objects(hosts)
