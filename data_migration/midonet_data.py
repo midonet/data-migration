@@ -247,7 +247,8 @@ class MidonetWrite(ProviderRouterMixin):
                     # Conflict -> continue
                     continue
                 self.process_child_sub_objects(obj, o)
-                self.add_to_child_dict(results, o)
+                if hasattr(o, 'get_id'):
+                    results[o.get_id()] = o
         return results
 
     @property
@@ -261,9 +262,6 @@ class MidonetWrite(ProviderRouterMixin):
         return None
 
     def process_child_sub_objects(self, data, obj):
-        pass
-
-    def add_to_child_dict(self, child_dict, obj):
         pass
 
     def skip_create_child(self, obj, p_id):
@@ -788,9 +786,6 @@ class PoolWrite(MidonetWrite):
     def key(self):
         return const.MN_POOLS
 
-    def add_to_child_dict(self, child_dict, obj):
-        child_dict[obj.get_id()] = obj
-
     def create_child_f(self, obj, p_id, parents):
         lb = _get_obj(self.mc.mn_api.get_load_balancer, p_id,
                       cache_map=parents)
@@ -889,9 +884,6 @@ class PortWrite(MidonetWrite):
     @property
     def key(self):
         return const.MN_PORTS
-
-    def add_to_child_dict(self, child_dict, obj):
-        child_dict[obj.get_id()] = obj
 
     def create_child_f(self, obj, p_id, parents):
         pid = obj['id']
