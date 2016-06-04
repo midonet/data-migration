@@ -296,7 +296,7 @@ class AdRouteWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "ad_routes"
+        return const.MN_AD_ROUTES
 
     def _get_bgp_router_id(self, bgp_id):
         bgp_map = self._get_resources('bgp')
@@ -341,7 +341,7 @@ class BgpWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "bgp"
+        return const.MN_BGP
 
     def create_child_f(self, obj, p_id, parents):
         router_id = self._get_port_device_id(p_id)
@@ -388,7 +388,7 @@ class BridgeWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "bridges"
+        return const.MN_BRIDGES
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_bridge()
@@ -424,7 +424,7 @@ class ChainWrite(MidonetWrite):
     """
     @property
     def key(self):
-        return "chains"
+        return const.MN_CHAINS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_chain()
@@ -485,7 +485,7 @@ class DhcpSubnetWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "dhcp_subnets"
+        return const.MN_DHCP
 
     def create_child_f(self, obj, p_id, parents):
         bridge = _get_obj(self.mc.mn_api.get_bridge, p_id,
@@ -537,7 +537,7 @@ class HealthMonitorWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "health_monitors"
+        return const.MN_HEALTH_MONITORS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_health_monitor()
@@ -570,7 +570,7 @@ class HostWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "hosts"
+        return const.MN_HOSTS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_host()
@@ -599,7 +599,7 @@ class HostInterfacePortWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "host_interface_ports"
+        return const.MN_HI_PORTS
 
     def skip_create_child(self, obj, p_id):
         pr_port_ids = self.provider_router_port_ids
@@ -644,7 +644,7 @@ class IpAddrGroupWrite(MidonetWrite):
     """
     @property
     def key(self):
-        return "ip_addr_groups"
+        return const.MN_IPA_GROUPS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_ip_addr_group()
@@ -683,7 +683,7 @@ class IpAddrGroupAddrWrite(MidonetWrite):
     """
     @property
     def key(self):
-        return "ip_addr_group_addrs"
+        return const.MN_IPAG_ADDRS
 
     def create_child_f(self, obj, p_id, parents):
         iag = _get_obj(self.mc.mn_api.get_ip_addr_group, p_id,
@@ -749,7 +749,7 @@ class LoadBalancerWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "load_balancers"
+        return const.MN_LOAD_BALANCERS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_load_balancer()
@@ -787,7 +787,7 @@ class PoolWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "pools"
+        return const.MN_POOLS
 
     def add_to_child_dict(self, child_dict, obj):
         child_dict[obj.get_id()] = obj
@@ -834,7 +834,7 @@ class PoolMemberWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "pool_members"
+        return const.MN_POOL_MEMBERS
 
     def create_child_f(self, obj, p_id, parents):
         pool = _get_obj(self.mc.mn_api.get_pool, p_id, cache_map=parents)
@@ -888,7 +888,7 @@ class PortWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "ports"
+        return const.MN_PORTS
 
     def add_to_child_dict(self, child_dict, obj):
         child_dict[obj.get_id()] = obj
@@ -950,7 +950,7 @@ class PortGroupWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "port_groups"
+        return const.MN_PORT_GROUPS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_port_group()
@@ -987,7 +987,7 @@ class PortGroupPortWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "port_group_ports"
+        return const.MN_PG_PORTS
 
     def create_child_f(self, obj, p_id, parents):
         pg = _get_obj(self.mc.mn_api.get_port_group, p_id, cache_map=parents)
@@ -1032,7 +1032,7 @@ class RouteWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "routes"
+        return const.MN_ROUTES
 
     def _port_routes(self, router_id):
         port_map = self._get_resources('ports')
@@ -1107,7 +1107,7 @@ class RouterWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "routers"
+        return const.MN_ROUTERS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_router()
@@ -1197,7 +1197,7 @@ class RuleWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "rules"
+        return const.MN_RULES
 
     def create_child_f(self, obj, p_id, parents):
         # TODO(RYU): Trace req?
@@ -1269,7 +1269,7 @@ class TunnelZoneWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "tunnel_zones"
+        return const.MN_TUNNEL_ZONES
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_tunnel_zone()
@@ -1299,7 +1299,7 @@ class TunnelZoneHostWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "tunnel_zone_hosts"
+        return const.MN_TZ_HOSTS
 
     def create_child_f(self, obj, p_id, parents):
         tz = _get_obj(self.mc.mn_api.get_tunnel_zone, p_id, cache_map=parents)
@@ -1338,7 +1338,7 @@ class VipWrite(MidonetWrite):
 
     @property
     def key(self):
-        return "vips"
+        return const.MN_VIPS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_vip()
@@ -1407,29 +1407,29 @@ class DataReader(object):
         tzh_map, _ = self.tzh.create_sub_resource_data(tz_objs)
 
         return {
-            "ad_routes": ar_map,
-            "bgp": bgp_map,
-            "bridges": bridge_dicts,
-            "chains": chain_dicts,
-            "dhcp_subnets": dhcp_map,
-            "health_monitors": hm_dicts,
-            "hosts": host_dicts,
-            "host_interface_ports": hip_map,
-            "ip_addr_groups": ipag_dicts,
-            "ip_addr_group_addrs": iag_addr_map,
-            "load_balancers": lb_dicts,
-            "pools": pool_map,
-            "pool_members": pool_member_map,
-            "port_groups": pg_dicts,
-            "port_group_ports": pgp_map,
-            "ports": port_map,
-            "port_links": _get_port_links(port_objs),
-            "routers": router_dicts,
-            "routes": route_map,
-            "rules": rule_map,
-            "tunnel_zones": tz_dicts,
-            "tunnel_zone_hosts": tzh_map,
-            "vips": vip_dicts
+            const.MN_AD_ROUTES: ar_map,
+            const.MN_BGP: bgp_map,
+            const.MN_BRIDGES: bridge_dicts,
+            const.MN_CHAINS: chain_dicts,
+            const.MN_DHCP: dhcp_map,
+            const.MN_HEALTH_MONITORS: hm_dicts,
+            const.MN_HOSTS: host_dicts,
+            const.MN_HI_PORTS: hip_map,
+            const.MN_IPA_GROUPS: ipag_dicts,
+            const.MN_IPAG_ADDRS: iag_addr_map,
+            const.MN_LOAD_BALANCERS: lb_dicts,
+            const.MN_POOLS: pool_map,
+            const.MN_POOL_MEMBERS: pool_member_map,
+            const.MN_PORT_GROUPS: pg_dicts,
+            const.MN_PG_PORTS: pgp_map,
+            const.MN_PORTS: port_map,
+            const.MN_PORT_LINKS: _get_port_links(port_objs),
+            const.MN_ROUTERS: router_dicts,
+            const.MN_ROUTES: route_map,
+            const.MN_RULES: rule_map,
+            const.MN_TUNNEL_ZONES: tz_dicts,
+            const.MN_TZ_HOSTS: tzh_map,
+            const.MN_VIPS: vip_dicts
         }
 
 
