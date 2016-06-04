@@ -246,12 +246,7 @@ class MidonetWrite(ProviderRouterMixin):
                 if o is None:
                     # Conflict -> continue
                     continue
-                g_children = self.get_grand_children(obj)
-                if g_children:
-                    for g_child in g_children:
-                        LOG.debug("Creating sub child obj " + str(g_child))
-                        _create_data(self.create_grand_child_f(g_child, o),
-                                     g_child)
+                self.process_child_sub_objects(obj, o)
                 self.add_to_child_dict(results, o)
         return results
 
@@ -265,11 +260,8 @@ class MidonetWrite(ProviderRouterMixin):
     def create_child_f(self, obj, p_id, parents):
         return None
 
-    def get_grand_children(self, obj):
-        return []
-
-    def create_grand_child_f(self, obj, parent):
-        return None
+    def process_child_sub_objects(self, data, obj):
+        pass
 
     def add_to_child_dict(self, child_dict, obj):
         pass
@@ -505,15 +497,19 @@ class DhcpSubnetWrite(MidonetWrite):
                 .enabled(s['enabled'])
                 .create)
 
-    def get_grand_children(self, obj):
-        return obj['hosts']
+    def process_child_sub_objects(self, obj, parent):
 
-    def create_grand_child_f(self, obj, parent):
-        return (parent.add_dhcp_host()
-                .name(obj['name'])
-                .ip_addr(obj['ipAddr'])
-                .mac_addr(obj['macAddr'])
-                .create)
+        def _create_dhcp_host_f(obj, parent):
+            return (parent.add_dhcp_host()
+                    .name(obj['name'])
+                    .ip_addr(obj['ipAddr'])
+                    .mac_addr(obj['macAddr'])
+                    .create)
+
+        if obj['hosts']:
+            for host in obj['hosts']:
+                LOG.debug("Creating sub child obj " + str(host))
+                _create_data(_create_dhcp_host_f, host)
 
 
 class HealthMonitorRead(MidonetRead):
