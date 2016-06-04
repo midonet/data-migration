@@ -872,18 +872,19 @@ class PortRead(MidonetRead):
 class PortWrite(MidonetWrite):
     """Expected format:
 
-    "ports": [{"id": UUID,
-            "deviceId": UUID,
-            "adminStateUp": Bool,
-            "inboundFilterId":, UUID,
-            "outboundFilterId": UUID,
-            "vifId": String,
-            "vlanId": Int,
-            "portAddress": String,
-            "networkAddress": String,
-            "networkLength": Int,
-            "portMac": String,
-            "type": String}, ...],
+    "ports": {"id" UUID (device ID):
+              [{"id": UUID,
+                "deviceId": UUID,
+                "adminStateUp": Bool,
+                "inboundFilterId":, UUID,
+                "outboundFilterId": UUID,
+                "vifId": String,
+                "vlanId": Int,
+                "portAddress": String,
+                "networkAddress": String,
+                "networkLength": Int,
+                "portMac": String,
+                "type": String}, ...],, ...}
     """
 
     @property
