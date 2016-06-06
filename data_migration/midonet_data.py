@@ -507,7 +507,7 @@ class DhcpSubnetWrite(MidonetWrite):
         if obj['hosts']:
             for host in obj['hosts']:
                 LOG.debug("Creating sub child obj " + str(host))
-                _create_data(_create_dhcp_host_f, host)
+                _create_data(_create_dhcp_host_f, object, host, parent)
 
 
 class HealthMonitorRead(MidonetRead):
