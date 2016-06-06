@@ -243,6 +243,9 @@ class MidonetWrite(ProviderRouterMixin):
                     continue
 
                 o = _create_data(self.create_child_f(obj, p_id, parents), obj)
+                if o is None:
+                    # Conflict -> continue
+                    continue
                 g_children = self.get_grand_children(obj)
                 if g_children:
                     for g_child in g_children:
