@@ -103,14 +103,6 @@ def _to_dto_dict(objs, modify=None, fields=None):
     return [_modify(o.dto) for o in objs]
 
 
-def _create_data(f, obj, *args, **kwargs):
-    try:
-        return f(*args, **kwargs)
-    except wexc.HTTPClientError as e:
-        if e.code == wexc.HTTPConflict.code:
-            LOG.warn("Already exists: " + str(obj))
-
-
 class ProviderRouterMixin(object):
 
     def __init__(self):
@@ -206,7 +198,35 @@ class MidonetWrite(ProviderRouterMixin):
         self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
+        self.created = 0
+        self.updated = 0
+        self.conflicted = 0
+        self.skipped = 0
         super(MidonetWrite, self).__init__()
+
+    def print_summary(self):
+        print("\n")
+        print("***** %s *****\n" % self.key)
+        print("%d created" % self.created)
+        print("%d updated" % self.updated)
+        print("%d skipped due to conflict" % self.conflicted)
+        print("%d skipped for other reasons" % self.skipped)
+
+    def _update_data(self, f, *args, **kwargs):
+        o = f(*args, **kwargs)
+        self.updated += 1
+        return o
+
+    def _create_data(self, f, obj, *args, **kwargs):
+        try:
+            o = f(*args, **kwargs)
+            self.created += 1
+            return o
+        except wexc.HTTPClientError as e:
+            if e.code == wexc.HTTPConflict.code:
+                LOG.warn("Already exists: " + str(obj))
+                self.conflicted += 1
+                return None
 
     def _get_resources(self, key):
         mido_data = self.data['midonet']
@@ -226,8 +246,14 @@ class MidonetWrite(ProviderRouterMixin):
         for obj in objs:
             LOG.debug("Creating " + self.key + " obj " + str(obj))
             obj_id = obj['id']
-            if not self.dry_run:
-                results[obj_id] = _create_data(self.create_f(obj), obj)
+
+            if self.dry_run:
+                self.skipped += 1
+                continue
+
+            o = self._create_data(self.create_f(obj), obj)
+            if o:
+                results[obj_id] = o
         return results
 
     def create_child_objects(self, parents):
@@ -236,19 +262,20 @@ class MidonetWrite(ProviderRouterMixin):
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
                 if self.skip_create_child(obj, p_id):
+                    self.skipped += 1
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
                 if self.dry_run:
+                    self.skipped += 1
                     continue
 
-                o = _create_data(self.create_child_f(obj, p_id, parents), obj)
-                if o is None:
-                    # Conflict -> continue
-                    continue
-                self.process_child_sub_objects(obj, o)
-                if hasattr(o, 'get_id'):
-                    results[o.get_id()] = o
+                o = self._create_data(self.create_child_f(obj, p_id, parents),
+                                      obj)
+                if o:
+                    self.process_child_sub_objects(obj, o)
+                    if hasattr(o, 'get_id'):
+                        results[o.get_id()] = o
         return results
 
     @property
@@ -344,7 +371,7 @@ class BgpWrite(MidonetWrite):
         # Update router with local AS
         LOG.debug("Updating router " + router_id + " with asn " +
                   str(obj['localAS']))
-        router.asn(obj['localAS']).update()
+        self._update_data(router.asn(obj['localAS']).update)
 
         return (router.add_bgp_peer()
                 .id(obj['id'])
@@ -507,7 +534,7 @@ class DhcpSubnetWrite(MidonetWrite):
         if obj['hosts']:
             for host in obj['hosts']:
                 LOG.debug("Creating sub child obj " + str(host))
-                _create_data(_create_dhcp_host_f, object, host, parent)
+                self._create_data(_create_dhcp_host_f, obj, host, parent)
 
 
 class HealthMonitorRead(MidonetRead):
@@ -698,6 +725,10 @@ class LinkWrite(MidonetWrite):
     "port_links": {UUID [Port ID]: UUID [PeerPort ID]}
     """
 
+    @property
+    def key(self):
+        return "port_links"
+
     def link_ports(self, ports):
         links = self._get_resources('port_links')
         port_ids = self.provider_router_port_ids
@@ -707,14 +738,20 @@ class LinkWrite(MidonetWrite):
             # Skip the provider router ports
             if port_id in port_ids or peer_id in port_ids:
                 LOG.debug("Skipping Provider Router port linking " + str(link))
+                self.skipped += 1
                 continue
 
             LOG.debug("Linking ports " + str(link))
             if self.dry_run:
+                self.skipped += 1
                 continue
 
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
-            _create_data(self.mc.mn_api.link, link, port, peer_id)
+            o = self._create_data(self.mc.mn_api.link, link, port, peer_id)
+            if o:
+                self.created += 1
+            else:
+                self.conflicted += 1
 
 
 class LoadBalancerRead(MidonetRead):
@@ -1452,6 +1489,32 @@ class DataWriter(object):
         self.pool_member = PoolMemberWrite(data, dry_run=dry_run)
         self.vip = VipWrite(data, dry_run=dry_run)
 
+    def _print_summary(self):
+        self.ad_route.print_summary()
+        self.bgp.print_summary()
+        self.bridge.print_summary()
+        self.chain.print_summary()
+        self.dhcp.print_summary()
+        self.hm.print_summary()
+        self.host.print_summary()
+        self.hi_port.print_summary()
+        self.ip_addr_group.print_summary()
+        self.iag_addr.print_summary()
+        self.lb.print_summary()
+        self.pool.print_summary()
+        self.pool_member.print_summary()
+        self.port.print_summary()
+        self.link.print_summary()
+        self.port_group.print_summary()
+        self.pgp.print_summary()
+        self.route.print_summary()
+        self.router.print_summary()
+        self.route.print_summary()
+        self.rule.print_summary()
+        self.tz.print_summary()
+        self.tzh.print_summary()
+        self.vip.print_summary()
+
     def migrate(self):
         LOG.info('Running MidoNet migration process')
         hosts = self.host.create_objects()
@@ -1488,3 +1551,5 @@ class DataWriter(object):
         # Host Bindings
         self.tzh.create_child_objects(tunnel_zones)
         self.hi_port.create_child_objects(hosts)
+
+        self._print_summary()
