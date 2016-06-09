@@ -198,34 +198,34 @@ class MidonetWrite(ProviderRouterMixin):
         self.mc = context.get_write_context()
         self.data = data
         self.dry_run = dry_run
-        self.created = 0
-        self.updated = 0
-        self.conflicted = 0
-        self.skipped = 0
+        self.created = []
+        self.updated = []
+        self.conflicted = []
+        self.skipped = []
         super(MidonetWrite, self).__init__()
 
     def print_summary(self):
         print("\n")
         print("***** %s *****\n" % self.key)
-        print("%d created" % self.created)
-        print("%d updated" % self.updated)
-        print("%d skipped due to conflict" % self.conflicted)
-        print("%d skipped for other reasons" % self.skipped)
+        print("%d created" % len(self.created))
+        print("%d updated" % len(self.updated))
+        print("%d skipped due to conflict" % len(self.conflicted))
+        print("%d skipped for other reasons" % len(self.skipped))
 
-    def _update_data(self, f, *args, **kwargs):
+    def _update_data(self, f, obj, *args, **kwargs):
         o = f(*args, **kwargs)
-        self.updated += 1
+        self.updated.append(obj)
         return o
 
     def _create_data(self, f, obj, *args, **kwargs):
         try:
             o = f(*args, **kwargs)
-            self.created += 1
+            self.created.append(obj)
             return o
         except wexc.HTTPClientError as e:
             if e.code == wexc.HTTPConflict.code:
                 LOG.warn("Already exists: " + str(obj))
-                self.conflicted += 1
+                self.conflicted.append(obj)
                 return None
 
     def _get_resources(self, key):
@@ -261,7 +261,7 @@ class MidonetWrite(ProviderRouterMixin):
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
                 if self.skip_create_child(obj, p_id):
-                    self.skipped += 1
+                    self.skipped.append(obj)
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
@@ -369,7 +369,7 @@ class BgpWrite(MidonetWrite):
         # Update router with local AS
         LOG.debug("Updating router " + router_id + " with asn " +
                   str(obj['localAS']))
-        self._update_data(router.asn(obj['localAS']).update)
+        self._update_data(router.asn(obj['localAS']).update, obj)
 
         return (router.add_bgp_peer()
                 .id(obj['id'])
@@ -736,7 +736,7 @@ class LinkWrite(MidonetWrite):
             # Skip the provider router ports
             if port_id in port_ids or peer_id in port_ids:
                 LOG.debug("Skipping Provider Router port linking " + str(link))
-                self.skipped += 1
+                self.skipped.append(link)
                 continue
 
             LOG.debug("Linking ports " + str(link))
@@ -746,9 +746,9 @@ class LinkWrite(MidonetWrite):
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
             o = self._create_data(self.mc.mn_api.link, link, port, peer_id)
             if o:
-                self.created += 1
+                self.created.append(link)
             else:
-                self.conflicted += 1
+                self.conflicted.append(link)
 
 
 class LoadBalancerRead(MidonetRead):
