@@ -248,7 +248,6 @@ class MidonetWrite(ProviderRouterMixin):
             obj_id = obj['id']
 
             if self.dry_run:
-                self.skipped += 1
                 continue
 
             o = self._create_data(self.create_f(obj), obj)
@@ -267,7 +266,6 @@ class MidonetWrite(ProviderRouterMixin):
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
                 if self.dry_run:
-                    self.skipped += 1
                     continue
 
                 o = self._create_data(self.create_child_f(obj, p_id, parents),
@@ -743,7 +741,6 @@ class LinkWrite(MidonetWrite):
 
             LOG.debug("Linking ports " + str(link))
             if self.dry_run:
-                self.skipped += 1
                 continue
 
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
