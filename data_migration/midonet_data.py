@@ -225,6 +225,7 @@ class MidonetWrite(ProviderRouterMixin):
                 LOG.warn("Already exists: " + str(obj))
                 self.conflicted.append(obj)
                 return None
+            raise e
 
     def _get_resources(self, key):
         mido_data = self.data['midonet']
@@ -1060,6 +1061,16 @@ class RouteWrite(MidonetWrite):
                "weight": Int}, ...]}, ...,
     """
 
+    def __init__(self, data, dry_run=False):
+        super(RouteWrite, self).__init__(data, dry_run=dry_run)
+        links = self._get_resources("port_links")
+        n_port_ids = self._neutron_ids('ports')
+        self.n_port_and_peer_ids = set()
+        for port_id, peer_id in iter(links.items()):
+            if port_id in n_port_ids or peer_id in n_port_ids:
+                self.n_port_and_peer_ids.add(port_id)
+                self.n_port_and_peer_ids.add(peer_id)
+
     @property
     def key(self):
         return const.MN_ROUTES
@@ -1086,6 +1097,11 @@ class RouteWrite(MidonetWrite):
             next_hop_port and
             obj['dstNetworkAddr'] == proute_map.get(next_hop_port)):
             LOG.debug("Skipping port route " + str(obj))
+            return True
+
+        # Skip the routes whose next hop port is either the neutron ports or
+        # their peers
+        if next_hop_port in self.n_port_and_peer_ids:
             return True
 
         return False
