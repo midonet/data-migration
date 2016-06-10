@@ -36,8 +36,7 @@ def _cidr_from_port(p):
     return p.get_network_address() + "/" + str(p.get_network_length())
 
 
-def _is_neutron_chain(chain):
-    name = chain.get_name()
+def _is_neutron_chain_name(name):
     return (name.startswith("OS_PRE_ROUTING_") or
             name.startswith("OS_POST_ROUTING_") or
             name.startswith("OS_PORT_") or
@@ -45,7 +44,7 @@ def _is_neutron_chain(chain):
 
 
 def _chain_filter(chains):
-    return [c for c in chains if not _is_neutron_chain(c)]
+    return [c for c in chains if not _is_neutron_chain_name(c.get_name())]
 
 
 def _get_port_links(ports):
@@ -242,9 +241,15 @@ class MidonetWrite(ProviderRouterMixin):
     def create_objects(self):
         results = {}
         objs = self._get_resources(self.key)
+
+        n_ids = self._neutron_ids(self.neutron_key) if self.neutron_key else []
+
         for obj in objs:
             LOG.debug("Creating " + self.key + " obj " + str(obj))
             obj_id = obj['id']
+            if self.skip_create_object(obj, n_ids=n_ids):
+                self.skipped.append(obj)
+                continue
 
             if self.dry_run:
                 continue
@@ -257,9 +262,10 @@ class MidonetWrite(ProviderRouterMixin):
     def create_child_objects(self, parents):
         results = {}
         obj_map = self._get_resources(self.key)
+        n_ids = self._neutron_ids(self.neutron_key) if self.neutron_key else []
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
-                if self.skip_create_child(obj, p_id):
+                if self.skip_create_object(obj, parent_id=p_id, n_ids=n_ids):
                     self.skipped.append(obj)
                     continue
 
@@ -279,6 +285,10 @@ class MidonetWrite(ProviderRouterMixin):
     def key(self):
         return ""
 
+    @property
+    def neutron_key(self):
+        return ""
+
     def create_f(self, obj):
         return None
 
@@ -288,8 +298,11 @@ class MidonetWrite(ProviderRouterMixin):
     def process_child_sub_objects(self, data, obj):
         pass
 
-    def skip_create_child(self, obj, p_id):
-        return False
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+        if n_ids:
+            return obj['id'] in n_ids
+        else:
+            return False
 
 
 class AdRouteRead(MidonetRead):
@@ -387,10 +400,6 @@ class BridgeRead(MidonetRead):
     def get_resources_f(self):
         return self.mc.mn_api.get_bridges
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('networks')
-
 
 class BridgeWrite(MidonetWrite):
     """Expected format:
@@ -402,10 +411,13 @@ class BridgeWrite(MidonetWrite):
                  "inboundFilterId": UUID,
                  "outboundFilterId":UUID}, ...],
     """
-
     @property
     def key(self):
         return const.MN_BRIDGES
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_NETWORKS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_bridge()
@@ -428,9 +440,6 @@ class ChainRead(MidonetRead):
     def get_resources_f(self):
         return self.mc.mn_api.get_chains
 
-    def filter_objs(self, objs):
-        return [c for c in objs if not _is_neutron_chain(c)]
-
 
 class ChainWrite(MidonetWrite):
     """Expected format:
@@ -442,6 +451,9 @@ class ChainWrite(MidonetWrite):
     @property
     def key(self):
         return const.MN_CHAINS
+
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+        return _is_neutron_chain_name(obj['name'])
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_chain()
@@ -622,7 +634,7 @@ class HostInterfacePortWrite(MidonetWrite):
     def key(self):
         return const.MN_HI_PORTS
 
-    def skip_create_child(self, obj, p_id):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
         pr_port_ids = self.provider_router_port_ids
         if obj['portId'] in pr_port_ids:
             LOG.debug("Skipping Provider Router port binding " + str(obj))
@@ -652,10 +664,6 @@ class IpAddrGroupRead(MidonetRead):
     def get_resources_f(self):
         return self.mc.mn_api.get_ip_addr_groups
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('security-groups')
-
 
 class IpAddrGroupWrite(MidonetWrite):
     """Expected format:
@@ -666,6 +674,10 @@ class IpAddrGroupWrite(MidonetWrite):
     @property
     def key(self):
         return const.MN_IPA_GROUPS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_SECURITY_GROUPS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_ip_addr_group()
@@ -798,10 +810,6 @@ class PoolRead(MidonetRead):
     def get_sub_resources(self, p_obj):
         return p_obj.get_pools()
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('pools')
-
 
 class PoolWrite(MidonetWrite):
     """Expected format:
@@ -814,10 +822,13 @@ class PoolWrite(MidonetWrite):
                 "healthMonitorId": UUID",
                 "adminStateUp": Bool}, ...]}, ...,
     """
-
     @property
     def key(self):
         return const.MN_POOLS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_POOLS
 
     def create_child_f(self, obj, p_id, parents):
         lb = _get_obj(self.mc.mn_api.get_load_balancer, p_id,
@@ -842,10 +853,6 @@ class PoolMemberRead(MidonetRead):
     def get_sub_resources(self, p_obj):
         return p_obj.get_pool_members()
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('pool_members')
-
 
 class PoolMemberWrite(MidonetWrite):
     """Expected format:
@@ -858,10 +865,13 @@ class PoolMemberWrite(MidonetWrite):
                        "weight": Int",
                        "adminStateUp": Bool}, ...]}, ...,
     """
-
     @property
     def key(self):
         return const.MN_POOL_MEMBERS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_MEMBERS
 
     def create_child_f(self, obj, p_id, parents):
         pool = _get_obj(self.mc.mn_api.get_pool, p_id, cache_map=parents)
@@ -905,14 +915,13 @@ class PortWrite(MidonetWrite):
                 "portMac": String,
                 "type": String}, ...],, ...}
     """
-
-    def __init__(self, data, dry_run=False):
-        super(PortWrite, self).__init__(data, dry_run=dry_run)
-        self.n_port_ids = self._neutron_ids("ports")
-
     @property
     def key(self):
         return const.MN_PORTS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_PORTS
 
     def create_child_f(self, obj, p_id, parents):
         pid = obj['id']
@@ -948,15 +957,14 @@ class PortWrite(MidonetWrite):
             raise ValueError("Unknown port type " + ptype +
                              " detected for port " + pid)
 
-    def skip_create_child(self, obj, p_id):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
         """We want to exclude the following ports:
 
         1. ID matching one of the neutron port IDs
         2. Peer ID, if present, matching one of Neutron port IDs
         """
         peer_id = obj["peerId"]
-        return obj["id"] in self.n_port_ids or (peer_id is not None and
-                                                peer_id in self.n_port_ids)
+        return obj["id"] in n_ids or (peer_id is not None and peer_id in n_ids)
 
 
 class PortGroupRead(MidonetRead):
@@ -1083,7 +1091,7 @@ class RouteWrite(MidonetWrite):
             route_map[port['id']] = port['portAddress']
         return route_map
 
-    def skip_create_child(self, obj, parent_id):
+    def skip_create_object(self, obj, parent_id=None):
         if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
             return True
@@ -1134,10 +1142,6 @@ class RouterRead(MidonetRead):
     def get_resources_f(self):
         return self.mc.mn_api.get_routers
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('routers')
-
 
 class RouterWrite(MidonetWrite):
     """Expected format:
@@ -1150,10 +1154,13 @@ class RouterWrite(MidonetWrite):
               "outboundFilterId": UUID},
               "loadBalancerId": UUID, ...],
     """
-
     @property
     def key(self):
         return const.MN_ROUTERS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_ROUTERS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_router()
@@ -1366,10 +1373,6 @@ class VipRead(MidonetRead):
     def get_resources_f(self):
         return self.mc.mn_api.get_vips
 
-    @property
-    def exclude_ids(self):
-        return self._neutron_ids('vips')
-
 
 class VipWrite(MidonetWrite):
     """Expected format:
@@ -1381,10 +1384,13 @@ class VipWrite(MidonetWrite):
               "protocolPort": Int,
               "sessionPersistence": String}, ...],
     """
-
     @property
     def key(self):
         return const.MN_VIPS
+
+    @property
+    def neutron_key(self):
+        return const.NEUTRON_VIPS
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_vip()
