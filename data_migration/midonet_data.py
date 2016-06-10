@@ -48,12 +48,6 @@ def _chain_filter(chains):
     return [c for c in chains if not _is_neutron_chain(c)]
 
 
-def _is_neutron_port(port, n_ports):
-    peer_id = port.get_peer_id()
-    return port.get_id() in n_ports or (peer_id is not None and
-                                        peer_id in n_ports)
-
-
 def _get_port_links(ports):
     links = {}
     for port in ports:
@@ -211,6 +205,10 @@ class MidonetWrite(ProviderRouterMixin):
         print("%d updated" % len(self.updated))
         print("%d skipped due to conflict" % len(self.conflicted))
         print("%d skipped for other reasons" % len(self.skipped))
+
+    def _neutron_ids(self, key):
+        nd = self.data['neutron']
+        return set(nd[key].keys())
 
     def _update_data(self, f, obj, *args, **kwargs):
         o = f(*args, **kwargs)
@@ -880,21 +878,12 @@ class PortRead(MidonetRead):
 
     @property
     def read_fields(self):
-        return {"id", "deviceId", "adminStateUp", "inboundFilterId",
+        return {"id", "deviceId", "adminStateUp", "inboundFilterId", "peerId",
                 "outboundFilterId", "vifId", "vlanId", "portAddress",
                 "networkAddress", "networkLength", "portMac", "type"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_ports()
-
-    def filter_objs(self, objs):
-        """We want to exclude the following ports:
-
-        1. ID matching one of the neutron port IDs
-        2. Peer ID, if present, matching one of Neutron port IDs
-        """
-        n_ports = self._neutron_ids("ports")
-        return [p for p in objs if not (_is_neutron_port(p, n_ports))]
 
 
 class PortWrite(MidonetWrite):
@@ -903,6 +892,7 @@ class PortWrite(MidonetWrite):
     "ports": {"id" UUID (device ID):
               [{"id": UUID,
                 "deviceId": UUID,
+                "peerId": UUID,
                 "adminStateUp": Bool,
                 "inboundFilterId":, UUID,
                 "outboundFilterId": UUID,
@@ -914,6 +904,10 @@ class PortWrite(MidonetWrite):
                 "portMac": String,
                 "type": String}, ...],, ...}
     """
+
+    def __init__(self, data, dry_run=False):
+        super(PortWrite, self).__init__(data, dry_run=dry_run)
+        self.n_port_ids = self._neutron_ids("ports")
 
     @property
     def key(self):
@@ -952,6 +946,16 @@ class PortWrite(MidonetWrite):
         else:
             raise ValueError("Unknown port type " + ptype +
                              " detected for port " + pid)
+
+    def skip_create_child(self, obj, p_id):
+        """We want to exclude the following ports:
+
+        1. ID matching one of the neutron port IDs
+        2. Peer ID, if present, matching one of Neutron port IDs
+        """
+        peer_id = obj["peerId"]
+        return obj["id"] in self.n_port_ids or (peer_id is not None and
+                                                peer_id in self.n_port_ids)
 
 
 class PortGroupRead(MidonetRead):
