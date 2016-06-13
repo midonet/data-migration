@@ -143,7 +143,6 @@ class MidonetRead(object):
             objs = self.get_sub_resources(p_obj)
             objs = self.filter_objs(objs)
             if objs:
-                objs = self._modify_objs(objs)
                 obj_list.extend(objs)
                 obj_map[p_obj.get_id()] = self.to_dicts(
                     objs, modify=self.modify_dto_f, fields=self.read_fields)
@@ -172,9 +171,6 @@ class MidonetRead(object):
     @property
     def modify_dto_f(self):
         return None
-
-    def _modify_objs(self, objs):
-        return objs
 
     def skip_parent(self, obj):
         return False
@@ -533,11 +529,11 @@ class DhcpSubnetWrite(MidonetWrite):
 
     def process_child_sub_objects(self, obj, parent):
 
-        def _create_dhcp_host_f(obj, parent):
-            return (parent.add_dhcp_host()
-                    .name(obj['name'])
-                    .ip_addr(obj['ipAddr'])
-                    .mac_addr(obj['macAddr'])
+        def _create_dhcp_host_f(o, p):
+            return (p.add_dhcp_host()
+                    .name(o['name'])
+                    .ip_addr(o['ipAddr'])
+                    .mac_addr(o['macAddr'])
                     .create)
 
         if obj['hosts']:
@@ -1091,7 +1087,7 @@ class RouteWrite(MidonetWrite):
             route_map[port['id']] = port['portAddress']
         return route_map
 
-    def skip_create_object(self, obj, parent_id=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
         if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
             return True
@@ -1100,10 +1096,10 @@ class RouteWrite(MidonetWrite):
         next_hop_port = obj['nextHopPort']
         proute_map = self._port_routes(parent_id)
         if (obj['srcNetworkAddr'] == "0.0.0.0" and
-            obj['srcNetworkLength'] == 0 and
-            obj['dstNetworkLength'] == 32 and
-            next_hop_port and
-            obj['dstNetworkAddr'] == proute_map.get(next_hop_port)):
+                obj['srcNetworkLength'] == 0 and
+                obj['dstNetworkLength'] == 32 and
+                next_hop_port and
+                obj['dstNetworkAddr'] == proute_map.get(next_hop_port)):
             LOG.debug("Skipping port route " + str(obj))
             return True
 
