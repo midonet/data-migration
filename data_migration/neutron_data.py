@@ -17,9 +17,7 @@ import abc
 from data_migration import constants as const
 from data_migration import context as ctx
 from data_migration import data as dm_data
-from data_migration import exceptions as exc
 from data_migration import provider_router as pr
-from data_migration import utils
 import logging
 import six
 from webob import exc as wexc
@@ -27,28 +25,15 @@ from webob import exc as wexc
 LOG = logging.getLogger(name="data_migration")
 
 
-def _get_neutron_objects(key, func, context, filter_list=None):
-    if filter_list is None:
-        filter_list = []
-
+def _get_neutron_objects(key, func, context, filters=None, post_f=None):
     retmap = {key: {}}
     submap = retmap[key]
 
-    filters = {}
-    for f in filter_list:
-        new_filter = f.func_filter()
-        if new_filter:
-            filters.update({new_filter[0]: new_filter[1]})
-
-    object_list = func(context=context, filters=filters if filters else None)
-
-    for f in filter_list:
-        f.post_filter(object_list)
+    object_list = func(context=context, filters=filters)
+    if post_f:
+        object_list = post_f(object_list)
 
     for obj in object_list:
-        if 'id' not in obj:
-            raise exc.UpgradeScriptException(
-                'Trying to parse an object with no ID field: ' + str(obj))
         submap[obj['id']] = obj
 
     return retmap
@@ -84,28 +69,6 @@ def _try_create_obj(f, *args):
 def _make_op_dict(res_type, obj):
     LOG.debug("Op: " + res_type + " -> " + str(obj))
     return {"type": res_type, "data": obj}
-
-
-def _get_subnet_router(context, filters=None):
-    c = ctx.get_read_context()
-    new_list = []
-    subnets = c.plugin.get_subnets(context=context)
-    for subnet in subnets:
-        subnet_id = subnet['id']
-        subnet_gw_ip = subnet['gateway_ip']
-        interfaces = c.plugin.get_ports(context=context, filters=filters)
-        gw_iface = next(
-            (i for i in interfaces
-             if ('fixed_ips' in i and len(i['fixed_ips']) > 0 and
-                 i['fixed_ips'][0]['ip_address'] == subnet_gw_ip and
-                 i['fixed_ips'][0]['subnet_id'] == subnet_id)),
-            None)
-        gw_id = None
-        if gw_iface:
-            gw_id = gw_iface['device_id']
-
-        new_list.append({'id': subnet_id, 'gw_router_id': gw_id})
-    return new_list
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -210,12 +173,11 @@ class RouterInterface(Neutron):
 
     def get(self):
         c = ctx.get_read_context()
-        filter_list = [utils.ListFilter(
-            check_key='device_owner', check_list=['network:router_interface'])]
+        f = {'device_owner': ['network:router_interface']}
         return _get_neutron_objects(key=const.NEUTRON_ROUTER_INTERFACES,
                                     func=c.plugin.get_ports,
                                     context=c.n_ctx,
-                                    filter_list=filter_list)
+                                    filters=f)
 
     def create(self, data):
         c = ctx.get_write_context()
@@ -228,8 +190,8 @@ class RouterInterface(Neutron):
         router_obj = obj_map[const.NEUTRON_ROUTERS][obj['device_id']]
         router_id = router_obj['id']
         if 'fixed_ips' not in obj:
-            raise exc.UpgradeScriptException(
-                'Router interface port has no fixed IPs:' + str(obj))
+            raise ValueError("Router interface port has no fixed IPs:"
+                             + str(obj))
         subnet_id = obj['fixed_ips'][0]['subnet_id']
         interface_dict = {'id': router_id,
                           'port_id': pid,
@@ -239,15 +201,34 @@ class RouterInterface(Neutron):
 
 class SubnetGateway(Neutron):
 
+    def _is_gw_port(self, port, subnet):
+        return ('fixed_ips' in port and len(port['fixed_ips']) > 0 and
+                port['fixed_ips'][0]['ip_address'] == subnet['gateway_ip'] and
+                port['fixed_ips'][0]['subnet_id'] == subnet['id'])
+
+    def _find_gw_port(self, ports, subnet):
+        return next((p for p in ports if self._is_gw_port(p, subnet)), None)
+
+    def _find_gw_router(self, ports, subnet):
+        gw_port = self._find_gw_port(ports, subnet)
+        return gw_port['device_id'] if gw_port else None
+
+    def _to_subnet_gateways(self, objs):
+        l = []
+        c = ctx.get_read_context()
+        f = {'device_owner': ['network:router_interface']}
+        ports = c.plugin.get_ports(context=c.n_ctx, filters=f)
+        for subnet in objs:
+            l.append({'id': subnet['id'],
+                      'gw_router_id': self._find_gw_router(ports, subnet)})
+        return l
+
     def get(self):
         c = ctx.get_read_context()
-        filter_list = [
-            utils.ListFilter(check_key='device_owner',
-                             check_list=['network:router_interface'])]
         return _get_neutron_objects(key=const.NEUTRON_SUBNET_GATEWAYS,
-                                    func=_get_subnet_router,
+                                    func=c.plugin.get_subnets,
                                     context=c.n_ctx,
-                                    filter_list=filter_list)
+                                    post_f=self._to_subnet_gateways)
 
 
 class FloatingIp(Neutron):
@@ -284,8 +265,8 @@ class Pool(Neutron):
         router_id = obj_map[
             const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
         if not router_id:
-            raise exc.UpgradeScriptException(
-                "LB Pool's subnet has no associated gateway router: " + obj)
+            raise ValueError("LB Pool's subnet has no associated gateway "
+                             "router: " + str(obj))
 
         new_lb_obj = obj.copy()
         new_lb_obj['health_monitors'] = []
@@ -332,11 +313,14 @@ class HealthMonitor(Neutron):
 
     def get(self):
         c = ctx.get_read_context()
-        filter_list = [utils.MinLengthFilter(field='pools', min_len=1)]
+
+        def _filter_non_associated_hm(objs):
+            return [o for o in objs if 'pools' in o and len(o['pools']) > 0]
+
         return _get_neutron_objects(key=const.NEUTRON_HEALTH_MONITORS,
                                     func=c.lb_plugin.get_health_monitors,
                                     context=c.n_ctx,
-                                    filter_list=filter_list)
+                                    post_f=_filter_non_associated_hm)
 
     def create(self, data):
         c = ctx.get_write_context()
