@@ -16,7 +16,9 @@
 import abc
 from data_migration import constants as const
 from data_migration import context as ctx
+from data_migration import data as dm_data
 from data_migration import exceptions as exc
+from data_migration import provider_router as pr
 from data_migration import utils
 import logging
 import six
@@ -70,17 +72,6 @@ def _create_op_list(obj_map):
 def _router_has_gateway(r):
     return ('external_gateway_info' in r and
             'external_fixed_ips' in r['external_gateway_info'])
-
-
-def _get_external_subnet_ids(nets):
-    subnet_ids = []
-    networks = [net for net in iter(nets.values())
-                if net['router:external']]
-    for net in networks:
-        for sub in net['subnets']:
-            subnet_ids.append(sub)
-
-    return subnet_ids
 
 
 def _try_create_obj(f, *args):
@@ -387,16 +378,17 @@ def prepare():
     return obj_map
 
 
-class DataWriter(object):
+class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def __init__(self, data, dry_run=False):
         self.mc = ctx.get_write_context()
         self.data = data
         self.dry_run = dry_run
+        super(DataWriter, self).__init__(data)
 
     def migrate(self):
         LOG.info('Running Neutron migration process')
-        ops = self.data['neutron']['ops']
+        ops = self._get_neutron_resources('ops')
         for op in ops:
             LOG.debug(_print_op(op))
             obj = _NEUTRON_OBJ_MAP[op['type']]
@@ -408,93 +400,3 @@ class DataWriter(object):
             return {}
         else:
             return f(self.mc.n_ctx, *args)
-
-    def create_edge_router(self, tenant):
-        """Create the edge router
-
-        The expected input is:
-        {
-            'router': {
-                           'name': <name>,
-                           'admin_state_up': <admin_state_up>
-                      },
-            'ports': [{
-                           'admin_state_up': <admin_state_up>,
-                           'network_cidr': <network_cidr>,
-                           'mac': <mac>,
-                           'ip_address': <ip_address>,
-                           'host': <host>,
-                           'iface': <iface>,
-
-                      }, ...].
-        }
-
-        nets is a list of Neutron network objects.
-        """
-        LOG.info('Running Edge Router migration process')
-
-        provider_router = self.data['midonet']['provider_router']
-        nets = self.data['neutron']['networks']
-        ports = provider_router['ports']
-        router = provider_router['router']
-
-        router_obj = {'router': {'name': router['name'],
-                                 'tenant_id': tenant,
-                                 'admin_state_up': router['admin_state_up']}}
-        LOG.debug("[EDGE ROUTER] Create Router: " + str(router_obj))
-        upl_router = self._create_neutron_data(self.mc.l3_plugin.create_router,
-                                               router_obj)
-
-        for port in ports:
-            base_name = port['host'] + "_" + port['iface']
-            net_obj = {'network': {'name': base_name + "_uplink_net",
-                                   'tenant_id': tenant,
-                                   'shared': False,
-                                   'provider:network_type': 'uplink',
-                                   'admin_state_up': True}}
-            LOG.debug("[EDGE ROUTER] Create Network: " + str(net_obj))
-            upl_net = self._create_neutron_data(
-                self.mc.plugin.create_network, net_obj)
-
-            subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
-                                     'network_id': upl_net.get('id'),
-                                     'ip_version': 4,
-                                     'cidr': port['network_cidr'],
-                                     'dns_nameservers': [],
-                                     'host_routes': [],
-                                     'allocation_pools': None,
-                                     'enable_dhcp': False,
-                                     'tenant_id': tenant,
-                                     'admin_state_up': True}}
-            LOG.debug("[EDGE ROUTER] Create Subnet: " + str(subnet_obj))
-            upl_sub = self._create_neutron_data(self.mc.plugin.create_subnet,
-                                                subnet_obj)
-
-            port_obj = {'port': {'name': base_name + "_uplink_port",
-                                 'tenant_id': 'admin',
-                                 'network_id': upl_net.get('id'),
-                                 'device_id': '',
-                                 'device_owner': '',
-                                 'mac_address': port['mac'],
-                                 'fixed_ips': [
-                                     {'subnet_id': upl_sub.get('id'),
-                                      'ip_address': port['ip_address']}],
-                                 'binding:host_id': port['host'],
-                                 'binding:profile': {
-                                     'interface_name': port['iface']},
-                                 'admin_state_up': port['admin_state_up']}}
-            LOG.debug("[EDGE ROUTER] Create Port: " + str(port_obj))
-            bound_port = self._create_neutron_data(self.mc.plugin.create_port,
-                                                   port_obj)
-
-            iface_obj = {'port_id': bound_port.get('id')}
-            LOG.debug("[EDGE ROUTER] Create Router Intf: " + str(iface_obj))
-            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
-                                      upl_router.get('id'), iface_obj)
-
-        subnet_ids = _get_external_subnet_ids(nets)
-        for subnet in subnet_ids:
-            iface_obj = {'subnet_id': subnet}
-            LOG.debug("[EDGE ROUTER] Create Router Intf: " + str(iface_obj))
-            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
-                                      upl_router.get('id'), iface_obj)

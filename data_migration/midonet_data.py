@@ -857,7 +857,8 @@ class PortRead(MidonetRead):
     def read_fields(self):
         return {"id", "deviceId", "adminStateUp", "inboundFilterId", "peerId",
                 "outboundFilterId", "vifId", "vlanId", "portAddress",
-                "networkAddress", "networkLength", "portMac", "type"}
+                "networkAddress", "networkLength", "portMac", "type", "hostId",
+                "interfaceName"}
 
     def get_sub_resources(self, p_obj):
         return p_obj.get_ports()
@@ -870,6 +871,8 @@ class PortWrite(MidonetWrite):
               [{"id": UUID,
                 "deviceId": UUID,
                 "peerId": UUID,
+                "hostId": UUID,
+                "interfaceName": String,
                 "adminStateUp": Bool,
                 "inboundFilterId":, UUID,
                 "outboundFilterId": UUID,
