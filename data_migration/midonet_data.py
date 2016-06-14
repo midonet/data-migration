@@ -17,6 +17,7 @@ import abc
 from data_migration import constants as const
 from data_migration import context
 from data_migration import data as dm_data
+from data_migration import provider_router as pr
 import logging
 import six
 from webob import exc as wexc
@@ -97,30 +98,6 @@ def _to_dto_dict(objs, modify=None, fields=None):
     return [_modify(o.dto) for o in objs]
 
 
-class ProviderRouterMixin(object):
-
-    def __init__(self):
-        self._pr_port_map = {}
-
-    @property
-    def provider_router_ports(self):
-        if not self._pr_port_map:
-            routers = self._get_midonet_resources('routers')
-            port_map = self._get_midonet_resources('ports')
-            for router in routers:
-                if router['name'] == const.PROVIDER_ROUTER_NAME:
-                    ports = port_map[router['id']]
-                    for port in ports:
-                        self._pr_port_map[port['id']] = port
-                    break
-
-        return self._pr_port_map
-
-    @property
-    def provider_router_port_ids(self):
-        return self.provider_router_ports.keys()
-
-
 @six.add_metaclass(abc.ABCMeta)
 class MidonetRead(object):
 
@@ -182,7 +159,7 @@ class MidonetRead(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class MidonetWrite(dm_data.CommonData, ProviderRouterMixin):
+class MidonetWrite(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def __init__(self, data, dry_run=False):
         self.mc = context.get_write_context()
