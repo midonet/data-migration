@@ -99,7 +99,7 @@ def _to_dto_dict(objs, modify=None, fields=None):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class MidonetRead(object):
+class MidonetReader(object):
 
     def __init__(self, nd):
         self.mc = context.get_read_context()
@@ -159,7 +159,7 @@ class MidonetRead(object):
 
 
 @six.add_metaclass(abc.ABCMeta)
-class MidonetWrite(dm_data.CommonData, pr.ProviderRouterMixin):
+class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def __init__(self, data, dry_run=False):
         self.mc = context.get_write_context()
@@ -169,7 +169,7 @@ class MidonetWrite(dm_data.CommonData, pr.ProviderRouterMixin):
         self.updated = []
         self.conflicted = []
         self.skipped = []
-        super(MidonetWrite, self).__init__(data)
+        super(MidonetWriter, self).__init__(data)
 
     def print_summary(self):
         print("\n")
@@ -271,7 +271,7 @@ class MidonetWrite(dm_data.CommonData, pr.ProviderRouterMixin):
             return False
 
 
-class AdRouteRead(MidonetRead):
+class AdRouteReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -281,7 +281,7 @@ class AdRouteRead(MidonetRead):
         return p_obj.get_ad_routes()
 
 
-class AdRouteWrite(MidonetWrite):
+class AdRouteWriter(MidonetWriter):
     """Expected format:
 
     "ad_routes": {UUID (BGP ID):
@@ -312,7 +312,7 @@ class AdRouteWrite(MidonetWrite):
                 .subnet_length(obj['prefixLength']).create)
 
 
-class BgpRead(MidonetRead):
+class BgpReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -325,7 +325,7 @@ class BgpRead(MidonetRead):
         return p_obj.get_type() != const.RTR_PORT_TYPE
 
 
-class BgpWrite(MidonetWrite):
+class BgpWriter(MidonetWriter):
     """Expected format:
 
     "bgp": {UUID (Port ID):
@@ -355,7 +355,7 @@ class BgpWrite(MidonetWrite):
                 .address(obj['peerAddr']).create)
 
 
-class BridgeRead(MidonetRead):
+class BridgeReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -367,7 +367,7 @@ class BridgeRead(MidonetRead):
         return self.mc.mn_api.get_bridges
 
 
-class BridgeWrite(MidonetWrite):
+class BridgeWriter(MidonetWriter):
     """Expected format:
 
     "bridges": [{"id": UUID,
@@ -396,7 +396,7 @@ class BridgeWrite(MidonetWrite):
                 .create)
 
 
-class ChainRead(MidonetRead):
+class ChainReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -407,7 +407,7 @@ class ChainRead(MidonetRead):
         return self.mc.mn_api.get_chains
 
 
-class ChainWrite(MidonetWrite):
+class ChainWriter(MidonetWriter):
     """Expected format:
 
     "chains": [{"id": UUID,
@@ -429,7 +429,7 @@ class ChainWrite(MidonetWrite):
                 .create)
 
 
-class DhcpSubnetRead(MidonetRead):
+class DhcpSubnetReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -455,7 +455,7 @@ class DhcpSubnetRead(MidonetRead):
         return subnet_list
 
 
-class DhcpSubnetWrite(MidonetWrite):
+class DhcpSubnetWriter(MidonetWriter):
     """Expected format:
 
     "dhcp_subnets": {UUID (Bridge Id):
@@ -512,7 +512,7 @@ class DhcpSubnetWrite(MidonetWrite):
                 self._create_data(_create_dhcp_host_f, obj, host, parent)
 
 
-class HealthMonitorRead(MidonetRead):
+class HealthMonitorReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -523,7 +523,7 @@ class HealthMonitorRead(MidonetRead):
         return self.mc.mn_api.get_health_monitors
 
 
-class HealthMonitorWrite(MidonetWrite):
+class HealthMonitorWriter(MidonetWriter):
     """Expected format:
 
     "health_monitors": [{"id": UUID,
@@ -549,7 +549,7 @@ class HealthMonitorWrite(MidonetWrite):
                 .create)
 
 
-class HostRead(MidonetRead):
+class HostReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -560,7 +560,7 @@ class HostRead(MidonetRead):
         return self.mc.mn_api.get_hosts
 
 
-class HostWrite(MidonetWrite):
+class HostWriter(MidonetWriter):
     """Expected format:
 
     "hosts": [{"id": UUID,
@@ -578,7 +578,7 @@ class HostWrite(MidonetWrite):
                 .create)
 
 
-class HostInterfacePortRead(MidonetRead):
+class HostInterfacePortReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -588,7 +588,7 @@ class HostInterfacePortRead(MidonetRead):
         return p_obj.get_ports()
 
 
-class HostInterfacePortWrite(MidonetWrite):
+class HostInterfacePortWriter(MidonetWriter):
     """Expected format:
 
     "host_interface_ports": {UUID (Host ID):
@@ -620,7 +620,7 @@ class HostInterfacePortWrite(MidonetWrite):
                 .create)
 
 
-class IpAddrGroupRead(MidonetRead):
+class IpAddrGroupReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -631,7 +631,7 @@ class IpAddrGroupRead(MidonetRead):
         return self.mc.mn_api.get_ip_addr_groups
 
 
-class IpAddrGroupWrite(MidonetWrite):
+class IpAddrGroupWriter(MidonetWriter):
     """Expected format:
 
     "ip_addr_groups": [{"id": UUID,
@@ -652,7 +652,7 @@ class IpAddrGroupWrite(MidonetWrite):
                 .create)
 
 
-class IpAddrGroupAddrRead(MidonetRead):
+class IpAddrGroupAddrReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -673,7 +673,7 @@ class IpAddrGroupAddrRead(MidonetRead):
         return _to_ipv4
 
 
-class IpAddrGroupAddrWrite(MidonetWrite):
+class IpAddrGroupAddrWriter(MidonetWriter):
     """Expected format:
 
     "ip_addr_group_addrs": {UUID (IP addr group ID):
@@ -694,7 +694,7 @@ class IpAddrGroupAddrWrite(MidonetWrite):
             return iag.add_ipv6_addr().addr(obj['addr']).create
 
 
-class LinkWrite(MidonetWrite):
+class LinkWriter(MidonetWriter):
     """Expected format:
 
     "port_links": {UUID [Port ID]: UUID [PeerPort ID]}
@@ -728,7 +728,7 @@ class LinkWrite(MidonetWrite):
                 self.conflicted.append(link)
 
 
-class LoadBalancerRead(MidonetRead):
+class LoadBalancerReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -746,7 +746,7 @@ class LoadBalancerRead(MidonetRead):
         return objs
 
 
-class LoadBalancerWrite(MidonetWrite):
+class LoadBalancerWriter(MidonetWriter):
     """Expected Format:
 
     "load_balancers": [{"id": UUID,
@@ -766,7 +766,7 @@ class LoadBalancerWrite(MidonetWrite):
                 .create)
 
 
-class PoolRead(MidonetRead):
+class PoolReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -777,7 +777,7 @@ class PoolRead(MidonetRead):
         return p_obj.get_pools()
 
 
-class PoolWrite(MidonetWrite):
+class PoolWriter(MidonetWriter):
     """Expected format:
 
     "pools": {UUID (LoadBalancer ID):
@@ -809,7 +809,7 @@ class PoolWrite(MidonetWrite):
                 .create)
 
 
-class PoolMemberRead(MidonetRead):
+class PoolMemberReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -820,7 +820,7 @@ class PoolMemberRead(MidonetRead):
         return p_obj.get_pool_members()
 
 
-class PoolMemberWrite(MidonetWrite):
+class PoolMemberWriter(MidonetWriter):
     """Expected format:
 
     "pool_members": {UUID (Pool ID):
@@ -851,7 +851,7 @@ class PoolMemberWrite(MidonetWrite):
                 .create)
 
 
-class PortRead(MidonetRead):
+class PortReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -864,7 +864,7 @@ class PortRead(MidonetRead):
         return p_obj.get_ports()
 
 
-class PortWrite(MidonetWrite):
+class PortWriter(MidonetWriter):
     """Expected format:
 
     "ports": {"id" UUID (device ID):
@@ -936,7 +936,7 @@ class PortWrite(MidonetWrite):
         return obj["id"] in n_ids or (peer_id is not None and peer_id in n_ids)
 
 
-class PortGroupRead(MidonetRead):
+class PortGroupReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -947,7 +947,7 @@ class PortGroupRead(MidonetRead):
         return self.mc.mn_api.get_port_groups
 
 
-class PortGroupWrite(MidonetWrite):
+class PortGroupWriter(MidonetWriter):
     """Expected format:
 
     "port_groups": [{"id": UUID,
@@ -969,7 +969,7 @@ class PortGroupWrite(MidonetWrite):
                 .create)
 
 
-class PortGroupPortRead(MidonetRead):
+class PortGroupPortReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -986,7 +986,7 @@ class PortGroupPortRead(MidonetRead):
         return _extract_port_id
 
 
-class PortGroupPortWrite(MidonetWrite):
+class PortGroupPortWriter(MidonetWriter):
     """Expected format:
 
     "port_group_ports": {UUID (Port group ID):
@@ -1004,7 +1004,7 @@ class PortGroupPortWrite(MidonetWrite):
                 .create)
 
 
-class RouteRead(MidonetRead):
+class RouteReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1021,7 +1021,7 @@ class RouteRead(MidonetRead):
                 if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
 
 
-class RouteWrite(MidonetWrite):
+class RouteWriter(MidonetWriter):
     """Expected format:
 
     "routes": {UUID (Router ID):
@@ -1039,7 +1039,7 @@ class RouteWrite(MidonetWrite):
     """
 
     def __init__(self, data, dry_run=False):
-        super(RouteWrite, self).__init__(data, dry_run=dry_run)
+        super(RouteWriter, self).__init__(data, dry_run=dry_run)
         links = self._get_midonet_resources("port_links")
         n_port_ids = self._neutron_ids('ports')
         self.n_port_and_peer_ids = set()
@@ -1100,7 +1100,7 @@ class RouteWrite(MidonetWrite):
                 .weight(obj['weight']).create)
 
 
-class RouterRead(MidonetRead):
+class RouterReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1112,7 +1112,7 @@ class RouterRead(MidonetRead):
         return self.mc.mn_api.get_routers
 
 
-class RouterWrite(MidonetWrite):
+class RouterWriter(MidonetWriter):
     """Expected format:
 
     "routers": [{"id": UUID,
@@ -1143,7 +1143,7 @@ class RouterWrite(MidonetWrite):
                 .create)
 
 
-class RuleRead(MidonetRead):
+class RuleReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1163,7 +1163,7 @@ class RuleRead(MidonetRead):
         return p_obj.get_rules()
 
 
-class RuleWrite(MidonetWrite):
+class RuleWriter(MidonetWriter):
     """"Expected format:
 
     "rules": {UUID (Chain ID):
@@ -1270,7 +1270,7 @@ class RuleWrite(MidonetWrite):
                 .fragment_policy(obj['fragmentPolicy']).create)
 
 
-class TunnelZoneRead(MidonetRead):
+class TunnelZoneReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1281,7 +1281,7 @@ class TunnelZoneRead(MidonetRead):
         return self.mc.mn_api.get_tunnel_zones
 
 
-class TunnelZoneWrite(MidonetWrite):
+class TunnelZoneWriter(MidonetWriter):
     """Expected format:
 
     "tunnel_zones": [{"id": UUID,
@@ -1301,7 +1301,7 @@ class TunnelZoneWrite(MidonetWrite):
                 .create)
 
 
-class TunnelZoneHostRead(MidonetRead):
+class TunnelZoneHostReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1311,7 +1311,7 @@ class TunnelZoneHostRead(MidonetRead):
         return p_obj.get_hosts()
 
 
-class TunnelZoneHostWrite(MidonetWrite):
+class TunnelZoneHostWriter(MidonetWriter):
     """Expected format:
 
     "tunnel_zone_hosts": {UUID (Tunnel Zone ID):
@@ -1331,7 +1331,7 @@ class TunnelZoneHostWrite(MidonetWrite):
                 .create)
 
 
-class VipRead(MidonetRead):
+class VipReader(MidonetReader):
 
     @property
     def read_fields(self):
@@ -1343,7 +1343,7 @@ class VipRead(MidonetRead):
         return self.mc.mn_api.get_vips
 
 
-class VipWrite(MidonetWrite):
+class VipWriter(MidonetWriter):
     """Expected format:
 
     "vips": [{"id": UUID,
@@ -1375,28 +1375,28 @@ class VipWrite(MidonetWrite):
 class DataReader(object):
 
     def __init__(self, nd):
-        self.host = HostRead(nd)
-        self.tz = TunnelZoneRead(nd)
-        self.bridge = BridgeRead(nd)
-        self.dhcp = DhcpSubnetRead(nd)
-        self.router = RouterRead(nd)
-        self.chain = ChainRead(nd)
-        self.rule = RuleRead(nd)
-        self.ip_addr_group = IpAddrGroupRead(nd)
-        self.iag_addr = IpAddrGroupAddrRead(nd)
-        self.port_group = PortGroupRead(nd)
-        self.port = PortRead(nd)
-        self.pgp = PortGroupPortRead(nd)
-        self.route = RouteRead(nd)
-        self.bgp = BgpRead(nd)
-        self.ad_route = AdRouteRead(nd)
-        self.hi_port = HostInterfacePortRead(nd)
-        self.tzh = TunnelZoneHostRead(nd)
-        self.lb = LoadBalancerRead(nd)
-        self.hm = HealthMonitorRead(nd)
-        self.pool = PoolRead(nd)
-        self.pool_member = PoolMemberRead(nd)
-        self.vip = VipRead(nd)
+        self.host = HostReader(nd)
+        self.tz = TunnelZoneReader(nd)
+        self.bridge = BridgeReader(nd)
+        self.dhcp = DhcpSubnetReader(nd)
+        self.router = RouterReader(nd)
+        self.chain = ChainReader(nd)
+        self.rule = RuleReader(nd)
+        self.ip_addr_group = IpAddrGroupReader(nd)
+        self.iag_addr = IpAddrGroupAddrReader(nd)
+        self.port_group = PortGroupReader(nd)
+        self.port = PortReader(nd)
+        self.pgp = PortGroupPortReader(nd)
+        self.route = RouteReader(nd)
+        self.bgp = BgpReader(nd)
+        self.ad_route = AdRouteReader(nd)
+        self.hi_port = HostInterfacePortReader(nd)
+        self.tzh = TunnelZoneHostReader(nd)
+        self.lb = LoadBalancerReader(nd)
+        self.hm = HealthMonitorReader(nd)
+        self.pool = PoolReader(nd)
+        self.pool_member = PoolMemberReader(nd)
+        self.vip = VipReader(nd)
 
     def prepare(self):
         # Top level objects
@@ -1457,29 +1457,29 @@ class DataReader(object):
 class DataWriter(object):
 
     def __init__(self, data, dry_run=False):
-        self.host = HostWrite(data, dry_run=dry_run)
-        self.tz = TunnelZoneWrite(data, dry_run=dry_run)
-        self.bridge = BridgeWrite(data, dry_run=dry_run)
-        self.dhcp = DhcpSubnetWrite(data, dry_run=dry_run)
-        self.router = RouterWrite(data, dry_run=dry_run)
-        self.chain = ChainWrite(data, dry_run=dry_run)
-        self.rule = RuleWrite(data, dry_run=dry_run)
-        self.ip_addr_group = IpAddrGroupWrite(data, dry_run=dry_run)
-        self.iag_addr = IpAddrGroupAddrWrite(data, dry_run=dry_run)
-        self.link = LinkWrite(data, dry_run=dry_run)
-        self.port_group = PortGroupWrite(data, dry_run=dry_run)
-        self.port = PortWrite(data, dry_run=dry_run)
-        self.pgp = PortGroupPortWrite(data, dry_run=dry_run)
-        self.route = RouteWrite(data, dry_run=dry_run)
-        self.bgp = BgpWrite(data, dry_run=dry_run)
-        self.ad_route = AdRouteWrite(data, dry_run=dry_run)
-        self.hi_port = HostInterfacePortWrite(data, dry_run=dry_run)
-        self.tzh = TunnelZoneHostWrite(data, dry_run=dry_run)
-        self.lb = LoadBalancerWrite(data, dry_run=dry_run)
-        self.hm = HealthMonitorWrite(data, dry_run=dry_run)
-        self.pool = PoolWrite(data, dry_run=dry_run)
-        self.pool_member = PoolMemberWrite(data, dry_run=dry_run)
-        self.vip = VipWrite(data, dry_run=dry_run)
+        self.host = HostWriter(data, dry_run=dry_run)
+        self.tz = TunnelZoneWriter(data, dry_run=dry_run)
+        self.bridge = BridgeWriter(data, dry_run=dry_run)
+        self.dhcp = DhcpSubnetWriter(data, dry_run=dry_run)
+        self.router = RouterWriter(data, dry_run=dry_run)
+        self.chain = ChainWriter(data, dry_run=dry_run)
+        self.rule = RuleWriter(data, dry_run=dry_run)
+        self.ip_addr_group = IpAddrGroupWriter(data, dry_run=dry_run)
+        self.iag_addr = IpAddrGroupAddrWriter(data, dry_run=dry_run)
+        self.link = LinkWriter(data, dry_run=dry_run)
+        self.port_group = PortGroupWriter(data, dry_run=dry_run)
+        self.port = PortWriter(data, dry_run=dry_run)
+        self.pgp = PortGroupPortWriter(data, dry_run=dry_run)
+        self.route = RouteWriter(data, dry_run=dry_run)
+        self.bgp = BgpWriter(data, dry_run=dry_run)
+        self.ad_route = AdRouteWriter(data, dry_run=dry_run)
+        self.hi_port = HostInterfacePortWriter(data, dry_run=dry_run)
+        self.tzh = TunnelZoneHostWriter(data, dry_run=dry_run)
+        self.lb = LoadBalancerWriter(data, dry_run=dry_run)
+        self.hm = HealthMonitorWriter(data, dry_run=dry_run)
+        self.pool = PoolWriter(data, dry_run=dry_run)
+        self.pool_member = PoolMemberWriter(data, dry_run=dry_run)
+        self.vip = VipWriter(data, dry_run=dry_run)
 
     def _print_summary(self):
         self.ad_route.print_summary()
