@@ -36,7 +36,6 @@ class ProviderRouterMixin(object):
     def __init__(self):
         self._provider_router = None
         self._pr_port_map = {}
-        self.mc = ctx.get_write_context()
 
     @property
     def provider_router(self):
@@ -68,12 +67,13 @@ class ProviderRouterMixin(object):
 
     def provider_router_to_edge_router(self, tenant):
         LOG.info('Running Edge Router migration process')
+        mc = ctx.get_write_context()
         router_obj = {'router': {'name': self._provider_router['name'],
                                  'tenant_id': tenant,
                                  'admin_state_up':
                                      self._provider_router['admin_state_up']}}
         LOG.debug("Create Edge Router: " + str(router_obj))
-        upl_router = self._create_neutron_data(self.mc.l3_plugin.create_router,
+        upl_router = self._create_neutron_data(mc.l3_plugin.create_router,
                                                router_obj)
 
         for port in self.provider_router_ports.values():
@@ -88,8 +88,8 @@ class ProviderRouterMixin(object):
                                    'provider:network_type': 'uplink',
                                    'admin_state_up': True}}
             LOG.debug("Create Uplink Network: " + str(net_obj))
-            upl_net = self._create_neutron_data(
-                self.mc.plugin.create_network, net_obj)
+            upl_net = self._create_neutron_data(mc.plugin.create_network,
+                                                net_obj)
 
             cidr = port['networkAddress'] + "/" + str(port['networkLength'])
             subnet_obj = {'subnet': {'name': base_name + "_uplink_subnet",
@@ -103,7 +103,7 @@ class ProviderRouterMixin(object):
                                      'tenant_id': tenant,
                                      'admin_state_up': True}}
             LOG.debug("Create Uplink Subnet: " + str(subnet_obj))
-            upl_sub = self._create_neutron_data(self.mc.plugin.create_subnet,
+            upl_sub = self._create_neutron_data(mc.plugin.create_subnet,
                                                 subnet_obj)
 
             port_obj = {'port': {'name': base_name + "_uplink_port",
@@ -120,12 +120,12 @@ class ProviderRouterMixin(object):
                                      'interface_name': port['interfaceName']},
                                  'admin_state_up': port['adminStateUp']}}
             LOG.debug("Create Uplink Port: " + str(port_obj))
-            bound_port = self._create_neutron_data(self.mc.plugin.create_port,
+            bound_port = self._create_neutron_data(mc.plugin.create_port,
                                                    port_obj)
 
             iface_obj = {'port_id': bound_port.get('id')}
             LOG.debug("Create Uplink Router Intf: " + str(iface_obj))
-            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
+            self._create_neutron_data(mc.l3_plugin.add_router_interface,
                                       upl_router.get('id'), iface_obj)
 
         nets = self._get_neutron_resources('networks')
@@ -133,5 +133,5 @@ class ProviderRouterMixin(object):
         for subnet in subnet_ids:
             iface_obj = {'subnet_id': subnet}
             LOG.debug("Create Edge Router Intf: " + str(iface_obj))
-            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
+            self._create_neutron_data(mc.l3_plugin.add_router_interface,
                                       upl_router.get('id'), iface_obj)

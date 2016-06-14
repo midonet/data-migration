@@ -381,8 +381,6 @@ def prepare():
 class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def __init__(self, data, dry_run=False):
-        self.mc = ctx.get_write_context()
-        self.data = data
         self.dry_run = dry_run
         super(DataWriter, self).__init__(data)
 
@@ -399,4 +397,5 @@ class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin):
         if self.dry_run:
             return {}
         else:
-            return f(self.mc.n_ctx, *args)
+            mc = ctx.get_write_context()
+            return f(mc.n_ctx, *args)
