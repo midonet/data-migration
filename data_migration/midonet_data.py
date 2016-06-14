@@ -60,17 +60,6 @@ def _get_port_links(ports):
     return links
 
 
-def _get_objects(f, exclude=None, filter_func=None):
-    objs = f()
-    if exclude:
-        objs = [o for o in objs if o.get_id() not in exclude]
-
-    if filter_func:
-        objs = filter_func(objs)
-
-    return objs
-
-
 def _get_obj(f, obj_id, cache_map=None):
     if cache_map is None:
         cache_map = {}
@@ -106,8 +95,7 @@ class MidonetReader(object):
         self._nd = nd
 
     def create_resource_data(self):
-        objs = _get_objects(self.get_resources_f, exclude=self.exclude_ids,
-                            filter_func=self.filter_objs)
+        objs = self.get_resources()
         return objs, self.to_dicts(objs, modify=self.modify_dto_f,
                                    fields=self.read_fields)
 
@@ -115,11 +103,7 @@ class MidonetReader(object):
         obj_map = {}
         obj_list = []
         for p_obj in parent_objs:
-            if self.skip_parent(p_obj):
-                continue
-
-            objs = self.get_sub_resources(p_obj)
-            objs = self.filter_objs(objs)
+            objs = self.get_resources(parent=p_obj)
             if objs:
                 obj_list.extend(objs)
                 obj_map[p_obj.get_id()] = self.to_dicts(
@@ -129,29 +113,12 @@ class MidonetReader(object):
     def to_dicts(self, objs, modify=None, fields=None):
         return _to_dto_dict(objs, modify=modify, fields=fields)
 
-    @property
-    def get_resources_f(self):
-        return None
-
-    def get_sub_resources(self, p_obj):
+    def get_resources(self, parent=None):
         return []
-
-    def _neutron_ids(self, key):
-        return set(self._nd[key].keys())
-
-    @property
-    def exclude_ids(self):
-        return []
-
-    def filter_objs(self, objs):
-        return objs
 
     @property
     def modify_dto_f(self):
         return None
-
-    def skip_parent(self, obj):
-        return False
 
     @property
     def read_fields(self):
@@ -277,8 +244,8 @@ class AdRouteReader(MidonetReader):
     def read_fields(self):
         return {"id", "nwPrefix", "prefixLength"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_ad_routes()
+    def get_resources(self, parent=None):
+        return parent.get_ad_routes()
 
 
 class AdRouteWriter(MidonetWriter):
@@ -318,11 +285,8 @@ class BgpReader(MidonetReader):
     def read_fields(self):
         return {"id", "localAS", "peerAS", "peerAddr"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_bgps()
-
-    def skip_parent(self, p_obj):
-        return p_obj.get_type() != const.RTR_PORT_TYPE
+    def get_resources(self, parent=None):
+        return parent.get_bgps()
 
 
 class BgpWriter(MidonetWriter):
@@ -334,6 +298,9 @@ class BgpWriter(MidonetWriter):
               "peerAS": Int,
               "peerAddr": String}, ...]}, ...,
     """
+    def __init___(self, data, dry_run=None):
+        super(BgpWriter, self).__init__(data, dry_run=dry_run)
+        self.port_map = self._get_midonet_resources('ports')
 
     @property
     def key(self):
@@ -354,6 +321,13 @@ class BgpWriter(MidonetWriter):
                 .asn(obj['peerAS'])
                 .address(obj['peerAddr']).create)
 
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+        port = self.port_map[parent_id]
+        if port['type'] != const.RTR_PORT_TYPE:
+            LOG.debug("Skipping BGP on non-router port " + str(obj))
+            return True
+        return False
+
 
 class BridgeReader(MidonetReader):
 
@@ -362,9 +336,8 @@ class BridgeReader(MidonetReader):
         return {"id", "name", "tenantId", "adminStateUp", "inboundFilterId",
                 "outboundFilterId"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_bridges
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_bridges()
 
 
 class BridgeWriter(MidonetWriter):
@@ -402,9 +375,8 @@ class ChainReader(MidonetReader):
     def read_fields(self):
         return {"id", "name", "tenantId"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_chains
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_chains()
 
 
 class ChainWriter(MidonetWriter):
@@ -441,8 +413,8 @@ class DhcpSubnetReader(MidonetReader):
     def _host_fields(self):
         return {"name", "ipAddr", "macAddr"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_dhcp_subnets()
+    def get_resources(self, parent=None):
+        return parent.get_dhcp_subnets()
 
     def to_dicts(self, objs, modify=None, fields=None):
         subnet_list = []
@@ -518,9 +490,8 @@ class HealthMonitorReader(MidonetReader):
     def read_fields(self):
         return {"id", "type", "adminStateUp", "delay", "maxRetries", "timeout"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_health_monitors
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_health_monitors()
 
 
 class HealthMonitorWriter(MidonetWriter):
@@ -555,9 +526,8 @@ class HostReader(MidonetReader):
     def read_fields(self):
         return {"id", "name"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_hosts
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_hosts()
 
 
 class HostWriter(MidonetWriter):
@@ -584,8 +554,8 @@ class HostInterfacePortReader(MidonetReader):
     def read_fields(self):
         return {"portId", "interfaceName"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_ports()
+    def get_resources(self, parent=None):
+        return parent.get_ports()
 
 
 class HostInterfacePortWriter(MidonetWriter):
@@ -626,9 +596,8 @@ class IpAddrGroupReader(MidonetReader):
     def read_fields(self):
         return {"id", "name"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_ip_addr_groups
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_ip_addr_groups()
 
 
 class IpAddrGroupWriter(MidonetWriter):
@@ -658,8 +627,8 @@ class IpAddrGroupAddrReader(MidonetReader):
     def read_fields(self):
         return {"addr", "version"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_addrs()
+    def get_resources(self, parent=None):
+        return parent.get_addrs()
 
     @property
     def modify_dto_f(self):
@@ -734,16 +703,8 @@ class LoadBalancerReader(MidonetReader):
     def read_fields(self):
         return {"id", "routerId", "adminStateUp"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_load_balancers
-
-    def filter_objs(self, objs):
-        # Filter out LBs that are either not associated with a router created
-        # by Neutron.
-        n_router_ids = self._neutron_ids('routers')
-        objs = [o for o in objs if o.get_router_id() not in n_router_ids]
-        return objs
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_load_balancers()
 
 
 class LoadBalancerWriter(MidonetWriter):
@@ -754,6 +715,9 @@ class LoadBalancerWriter(MidonetWriter):
                         "adminStateUp": Bool
                        }, ...],
     """
+    def __init__(self, data, dry_run=False):
+        super(LoadBalancerWriter, self).__init__(data, dry_run=dry_run)
+        self.n_router_ids = self._neutron_ids('routers')
 
     @property
     def key(self):
@@ -765,6 +729,14 @@ class LoadBalancerWriter(MidonetWriter):
                 .admin_state_up(obj['adminStateUp'])
                 .create)
 
+    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+        # Filter out LBs that are either not associated with a router created
+        # by Neutron.
+        if obj['routerId'] in self.n_router_ids:
+            LOG.debug("Skipping LB on Neutron router " + str(obj))
+            return True
+        return False
+
 
 class PoolReader(MidonetReader):
 
@@ -773,8 +745,8 @@ class PoolReader(MidonetReader):
         return {"id", "loadBalancerId", "lbMethod", "adminStateUp", "protocol",
                 "healthMonitorId"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_pools()
+    def get_resources(self, parent=None):
+        return parent.get_pools()
 
 
 class PoolWriter(MidonetWriter):
@@ -816,8 +788,8 @@ class PoolMemberReader(MidonetReader):
         return {"id", "poolId", "address", "adminStateUp", "protocolPort",
                 "weight"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_pool_members()
+    def get_resources(self, parent=None):
+        return parent.get_pool_members()
 
 
 class PoolMemberWriter(MidonetWriter):
@@ -860,8 +832,8 @@ class PortReader(MidonetReader):
                 "networkAddress", "networkLength", "portMac", "type", "hostId",
                 "interfaceName"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_ports()
+    def get_resources(self, parent=None):
+        return parent.get_ports()
 
 
 class PortWriter(MidonetWriter):
@@ -942,9 +914,8 @@ class PortGroupReader(MidonetReader):
     def read_fields(self):
         return {"id", "name", "tenantId", "stateful"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_port_groups
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_port_groups()
 
 
 class PortGroupWriter(MidonetWriter):
@@ -975,8 +946,8 @@ class PortGroupPortReader(MidonetReader):
     def read_fields(self):
         return {"portId"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_ports()
+    def get_resources(self, parent=None):
+        return parent.get_ports()
 
     @property
     def modify_dto_f(self):
@@ -1012,13 +983,8 @@ class RouteReader(MidonetReader):
                 "dstNetworkLength", "srcNetworkAddr", "srcNetworkLength",
                 "nextHopGateway", "nextHopPort", "type", "weight"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_routes()
-
-    def filter_objs(self, objs):
-        # Remove metadata routes
-        return [r for r in objs
-                if r.get_dst_network_addr() != const.METADATA_ROUTE_IP]
+    def get_resources(self, parent=None):
+        return parent.get_routes()
 
 
 class RouteWriter(MidonetWriter):
@@ -1076,6 +1042,11 @@ class RouteWriter(MidonetWriter):
             LOG.debug("Skipping port route " + str(obj))
             return True
 
+        # Skip metadata routes
+        if obj['dstNetworkAddr'] == const.METADATA_ROUTE_IP:
+            LOG.debug("Skipping metadata route " + str(obj))
+            return True
+
         # Skip the routes whose next hop port is either the neutron ports or
         # their peers
         if next_hop_port in self.n_port_and_peer_ids:
@@ -1107,9 +1078,8 @@ class RouterReader(MidonetReader):
         return {"id", "name", "tenantId", "adminStateUp", "loadBalancerId",
                 "inboundFilterId", "outboundFilterId"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_routers
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_routers()
 
 
 class RouterWriter(MidonetWriter):
@@ -1159,8 +1129,8 @@ class RuleReader(MidonetReader):
                 "ipAddrGroupDst", "ipAddrGroupSrc", "tpSrc", "tpDst",
                 "fragmentPolicy"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_rules()
+    def get_resources(self, parent=None):
+        return parent.get_rules()
 
 
 class RuleWriter(MidonetWriter):
@@ -1276,9 +1246,8 @@ class TunnelZoneReader(MidonetReader):
     def read_fields(self):
         return {"id", "type", "name"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_tunnel_zones
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_tunnel_zones()
 
 
 class TunnelZoneWriter(MidonetWriter):
@@ -1307,8 +1276,8 @@ class TunnelZoneHostReader(MidonetReader):
     def read_fields(self):
         return {"hostId", "ipAddress"}
 
-    def get_sub_resources(self, p_obj):
-        return p_obj.get_hosts()
+    def get_resources(self, parent=None):
+        return parent.get_hosts()
 
 
 class TunnelZoneHostWriter(MidonetWriter):
@@ -1338,9 +1307,8 @@ class VipReader(MidonetReader):
         return {"id", "loadBalancerId", "poolId", "address", "protocolPort",
                 "sessionPersistence"}
 
-    @property
-    def get_resources_f(self):
-        return self.mc.mn_api.get_vips
+    def get_resources(self, parent=None):
+        return self.mc.mn_api.get_vips()
 
 
 class VipWriter(MidonetWriter):
