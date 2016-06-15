@@ -18,6 +18,7 @@ from data_migration import constants as const
 from data_migration import context
 from data_migration import data as dm_data
 from data_migration import provider_router as pr
+from data_migration import routes as dm_routes
 import logging
 import six
 from webob import exc as wexc
@@ -987,7 +988,7 @@ class RouteReader(MidonetReader):
         return parent.get_routes()
 
 
-class RouteWriter(MidonetWriter):
+class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
     """Expected format:
 
     "routes": {UUID (Router ID):
@@ -1018,38 +1019,24 @@ class RouteWriter(MidonetWriter):
     def key(self):
         return const.MN_ROUTES
 
-    def _port_routes(self, router_id):
-        port_map = self._get_midonet_resources('ports')
-        ports = port_map[router_id]
-        route_map = {}
-        for port in ports:
-            route_map[port['id']] = port['portAddress']
-        return route_map
-
     def skip_create_object(self, obj, parent_id=None, n_ids=None):
-        if obj['learned']:
+        if dm_routes.is_learned_route(obj):
             LOG.debug("Skipping learned route " + str(obj))
             return True
 
         # Skip the port routes
-        next_hop_port = obj['nextHopPort']
-        proute_map = self._port_routes(parent_id)
-        if (obj['srcNetworkAddr'] == "0.0.0.0" and
-                obj['srcNetworkLength'] == 0 and
-                obj['dstNetworkLength'] == 32 and
-                next_hop_port and
-                obj['dstNetworkAddr'] == proute_map.get(next_hop_port)):
+        if self._is_port_route(obj, parent_id):
             LOG.debug("Skipping port route " + str(obj))
             return True
 
         # Skip metadata routes
-        if obj['dstNetworkAddr'] == const.METADATA_ROUTE_IP:
+        if dm_routes.is_metadata_route(obj):
             LOG.debug("Skipping metadata route " + str(obj))
             return True
 
         # Skip the routes whose next hop port is either the neutron ports or
         # their peers
-        if next_hop_port in self.n_port_and_peer_ids:
+        if obj['nextHopPort'] in self.n_port_and_peer_ids:
             return True
 
         return False
@@ -1063,7 +1050,7 @@ class RouteWriter(MidonetWriter):
                 .type(obj['type'])
                 .attributes(obj.get('attributes'))
                 .dst_network_addr(obj['dstNetworkAddr'])
-                .dst_network_length(obj['srcNetworkLength'])
+                .dst_network_length(obj['dstNetworkLength'])
                 .src_network_addr(obj['srcNetworkAddr'])
                 .src_network_length(obj['srcNetworkLength'])
                 .next_hop_gateway(obj['nextHopGateway'])

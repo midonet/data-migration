@@ -43,7 +43,10 @@ def main():
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
                              '\tmigrate: migrate data from JSON input\n'
-                             '\tpr2er: convert provider router to edge router')
+                             '\tpr2er: convert provider router to edge router'
+                             '\n'
+                             '\textraroutes: convert midonet routes to Neutron'
+                             'extra routes')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -90,6 +93,11 @@ def main():
         json_source = json.loads(source)
         nm = nd.DataWriter(json_source, dry_run=dry_run)
         nm.provider_router_to_edge_router(args.tenant)
+    elif args.command == "extraroutes":
+        source = sys.stdin.readline()
+        json_source = json.loads(source)
+        nm = nd.DataWriter(json_source, dry_run=dry_run)
+        nm.routes_to_extra_routes()
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

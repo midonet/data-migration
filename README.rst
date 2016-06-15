@@ -47,3 +47,6 @@ Commands::
          Convert provider router to edge router and uplink networks.
          -t (--tenant) must be set for this command.  The input to this command
          is the JSON output from the 'prepare' command.
+     extraroutes
+         Convert MidoNet routes to Neutron extra routes.  The input to this
+         command is the JSON output from the 'prepare' command.

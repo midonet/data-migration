@@ -18,6 +18,7 @@ from data_migration import constants as const
 from data_migration import context as ctx
 from data_migration import data as dm_data
 from data_migration import provider_router as pr
+from data_migration import routes as er
 import logging
 import six
 from webob import exc as wexc
@@ -362,7 +363,8 @@ def prepare():
     return obj_map
 
 
-class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin):
+class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin,
+                 er.ExtraRoutesMixin):
 
     def __init__(self, data, dry_run=False):
         self.dry_run = dry_run
