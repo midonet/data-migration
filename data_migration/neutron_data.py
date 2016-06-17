@@ -265,6 +265,11 @@ class Pool(Neutron):
 
     def create(self, data):
         c = ctx.get_write_context()
+        # Stale data may not have router ID associated.  Skip such data.
+        if data['router_id'] is None:
+            LOG.debug("Skipping pool because of no router association: " +
+                      str(data))
+            return
         _try_create_obj(c.client.create_pool, c.n_ctx, data)
 
     def make_op_dict(self, obj_map, obj):
@@ -272,9 +277,6 @@ class Pool(Neutron):
         lb_subnet = obj['subnet_id']
         router_id = obj_map[
             const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
-        if not router_id:
-            raise ValueError("LB Pool's subnet has no associated gateway "
-                             "router: " + str(obj))
 
         new_lb_obj = obj.copy()
         new_lb_obj['health_monitors'] = []
