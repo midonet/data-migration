@@ -196,9 +196,6 @@ class RouterInterface(Neutron):
         pid = obj['id']
         router_obj = obj_map[const.NEUTRON_ROUTERS][obj['device_id']]
         router_id = router_obj['id']
-        if 'fixed_ips' not in obj:
-            raise ValueError("Router interface port has no fixed IPs:"
-                             + str(obj))
         subnet_id = obj['fixed_ips'][0]['subnet_id']
         interface_dict = {'id': router_id,
                           'port_id': pid,
@@ -271,6 +268,7 @@ class Pool(Neutron):
         _try_create_obj(c.client.create_pool, c.n_ctx, data)
 
     def make_op_dict(self, obj_map, obj):
+        LOG.debug("Pool.make_op_dict: obj=" + str(obj))
         lb_subnet = obj['subnet_id']
         router_id = obj_map[
             const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
