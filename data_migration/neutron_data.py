@@ -274,9 +274,12 @@ class Pool(Neutron):
 
     def make_op_dict(self, obj_map, obj):
         LOG.debug("Pool.make_op_dict: obj=" + str(obj))
-        lb_subnet = obj['subnet_id']
-        router_id = obj_map[
-            const.NEUTRON_SUBNET_GATEWAYS][lb_subnet]['gw_router_id']
+        subnet_id = obj['subnet_id']
+
+        # Data corruption may cause subnet to not exist here.  There is no
+        # foreign key constraint enforced.
+        subnet = obj_map[const.NEUTRON_SUBNET_GATEWAYS].get(subnet_id)
+        router_id = subnet['gw_router_id'] if subnet else None
 
         new_lb_obj = obj.copy()
         new_lb_obj['health_monitors'] = []
