@@ -26,40 +26,47 @@ def _make_extra_route(route):
 
 
 def _is_extra_route_convertible(route):
-    return (route['srcNetworkAddr'] == "0.0.0.0" and
+    # Convert to extra route only if the following conditions are met
+    return (route['nextHopPort'] and
+            not route['learned'] and
+            route['dstNetworkAddr'] != const.METADATA_ROUTE_IP and
+            route['srcNetworkAddr'] == "0.0.0.0" and
             route['srcNetworkLength'] == 0 and
             route['nextHopGateway'] and
             route['weight'] == 100)
 
 
-def is_learned_route(route):
-    return route['learned']
-
-
-def is_metadata_route(route):
-    return route['dstNetworkAddr'] == const.METADATA_ROUTE_IP
-
-
 class RouteMixin(object):
 
-    def _is_port_route(self, route, router_id):
+    def _find_nexthop_port_route(self, route, router_id, f):
         port_map = self._get_midonet_resources('ports')
         ports = port_map[router_id]
-        route_map = {}
-        for port in ports:
-            route_map[port['id']] = port['portAddress']
+        return next((p for p in ports if f(p, route)), None)
 
-        next_hop_port = route['nextHopPort']
-        return (route['srcNetworkAddr'] == "0.0.0.0" and
-                route['srcNetworkLength'] == 0 and
-                route['dstNetworkLength'] == 32 and
-                next_hop_port and
-                route['dstNetworkAddr'] == route_map.get(next_hop_port))
+    def is_network_route(self, route, router_id):
 
-    def _is_normal_route(self, route, router_id):
-        return not (is_learned_route(route) or
-                    self._is_port_route(route, router_id) or
-                    is_metadata_route(route))
+        def _is_network_route(p, r):
+            return (r.get('nextHopPort') == p['id'] and
+                    not r['learned'] and
+                    r['srcNetworkAddr'] == "0.0.0.0" and
+                    r['srcNetworkLength'] == 0 and
+                    r['dstNetworkAddress'] == p['networkAddress'] and
+                    r['dstNetworkLength'] == p['networkLength'])
+
+        return self._find_nexthop_port_route(route, router_id,
+                                             _is_network_route)
+
+    def is_port_route(self, route, router_id):
+
+        def _is_port_route(p, r):
+            return (r.get('nextHopPort') == p['id'] and
+                    not r['learned'] and
+                    r['srcNetworkAddr'] == "0.0.0.0" and
+                    r['srcNetworkLength'] == 0 and
+                    r['dstNetworkAddr'] == p['portAddress'] and
+                    r['dstNetworkLength'] == 32)
+
+        return self._find_nexthop_port_route(route, router_id, _is_port_route)
 
 
 class ExtraRoutesMixin(RouteMixin):
@@ -71,35 +78,33 @@ class ExtraRoutesMixin(RouteMixin):
         m_route_map = self._get_midonet_resources("routes")
         m_routes = m_route_map[router_id]
         for m_r in m_routes:
-            if (self._is_normal_route(m_r, router_id) and
-                    _is_extra_route_convertible(m_r)):
+            if _is_extra_route_convertible(m_r):
                 er = _make_extra_route(m_r)
                 extra_routes[m_r['id']] = er
 
         return extra_routes
 
-    def _update_extra_routes(self, router_id, routes):
+    def routes_to_extra_routes(self, router_id, delete=True):
         mc = ctx.get_write_context()
-        n_router = mc.l3_plugin.get_router(mc.n_ctx, router_id)
-        n_router["router"]["routes"] = routes
-        LOG.debug("Updating Neutron router " + str(n_router))
-        if not self.dry_run:
-            mc.l3_plugin.update_router(mc.n_ctx, router_id, n_router)
-
-    def routes_to_extra_routes(self):
-        LOG.info('Running extra routes migration process')
-        mc = ctx.get_write_context()
-        n_router_ids = self._neutron_ids("routers")
-
-        # Process existing Neutron routers first
-        for router_id in n_router_ids:
-
-            # Get all the "normal" routes, store and delete them
-            extra_route_map = self._get_extra_route_map(router_id)
-            for route_id in extra_route_map.keys():
+        # Get all the "normal" routes, store and delete them
+        extra_route_map = self._get_extra_route_map(router_id)
+        for route_id in extra_route_map.keys():
+            if delete:
                 LOG.debug("Deleting midonet route " + str(route_id))
                 if not self.dry_run:
                     mc.mn_api.delete_route(route_id)
 
-            if extra_route_map:
-                self._update_extra_routes(router_id, extra_route_map.values())
+        if extra_route_map:
+            n_router = mc.l3_plugin.get_router(mc.n_ctx, router_id)
+            n_router["router"]["routes"] = extra_route_map.values()
+            LOG.debug("Updating Neutron router " + str(n_router))
+            if not self.dry_run:
+                mc.l3_plugin.update_router(mc.n_ctx, router_id, n_router)
+
+    def migrate_routes(self):
+        LOG.info('Running extra routes migration process')
+        n_router_ids = self._neutron_ids("routers")
+
+        # Process existing Neutron routers first
+        for router_id in n_router_ids:
+            self.routes_to_extra_routes(router_id)

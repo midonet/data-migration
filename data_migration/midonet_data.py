@@ -1020,23 +1020,25 @@ class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
         return const.MN_ROUTES
 
     def skip_create_object(self, obj, parent_id=None, n_ids=None):
-        if dm_routes.is_learned_route(obj):
+        if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
             return True
 
         # Skip the port routes
-        if self._is_port_route(obj, parent_id):
+        if self.is_port_route(obj, parent_id):
             LOG.debug("Skipping port route " + str(obj))
             return True
 
         # Skip metadata routes
-        if dm_routes.is_metadata_route(obj):
+        if obj['dstNetworkAddr'] == const.METADATA_ROUTE_IP:
             LOG.debug("Skipping metadata route " + str(obj))
             return True
 
         # Skip the routes whose next hop port is either the neutron ports or
-        # their peers
-        if obj['nextHopPort'] in self.n_port_and_peer_ids:
+        # their peers and the it is a network route
+        if (obj['nextHopPort'] in self.n_port_and_peer_ids and
+                self.is_network_route(obj, parent_id)):
+            LOG.debug("Skipping neutron network route " + str(obj))
             return True
 
         return False

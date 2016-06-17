@@ -97,7 +97,7 @@ def main():
         source = sys.stdin.readline()
         json_source = json.loads(source)
         nm = nd.DataWriter(json_source, dry_run=dry_run)
-        nm.routes_to_extra_routes()
+        nm.migrate_routes()
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

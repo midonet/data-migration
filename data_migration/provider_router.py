@@ -137,7 +137,4 @@ class ProviderRouterMixin(object):
                                       upl_router.get('id'), iface_obj)
 
         # Handle extra routes
-        extra_route_map = self._get_extra_route_map(upl_router['id'])
-        if extra_route_map:
-            self._update_extra_routes(upl_router['id'],
-                                      extra_route_map.values())
+        self.routes_to_extra_routes(upl_router['id'], delete=False)
