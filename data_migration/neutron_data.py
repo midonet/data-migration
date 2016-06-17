@@ -68,7 +68,7 @@ def _try_create_obj(f, *args):
 
 
 def _make_op_dict(res_type, obj):
-    LOG.debug("Op: " + res_type + " -> " + str(obj))
+    LOG.debug("_make_op_dict: res_type=" + res_type + ", obj=" + str(obj))
     return {"type": res_type, "data": obj}
 
 
@@ -88,6 +88,7 @@ class Neutron(object):
 class SecurityGroup(Neutron):
 
     def get(self):
+        LOG.info("Getting Security Group objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_SECURITY_GROUPS,
                                     func=c.plugin.get_security_groups,
@@ -105,6 +106,7 @@ class SecurityGroup(Neutron):
 class Network(Neutron):
 
     def get(self):
+        LOG.info("Getting Network objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_NETWORKS,
                                     func=c.plugin.get_networks,
@@ -122,6 +124,7 @@ class Network(Neutron):
 class Subnet(Neutron):
 
     def get(self):
+        LOG.info("Getting Subnet objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_SUBNETS,
                                     func=c.plugin.get_subnets,
@@ -139,6 +142,7 @@ class Subnet(Neutron):
 class Port(Neutron):
 
     def get(self):
+        LOG.info("Getting Pool objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_PORTS,
                                     func=c.plugin.get_ports,
@@ -156,6 +160,7 @@ class Port(Neutron):
 class Router(Neutron):
 
     def get(self):
+        LOG.info("Getting Router objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_ROUTERS,
                                     func=c.plugin.get_routers,
@@ -173,6 +178,7 @@ class Router(Neutron):
 class RouterInterface(Neutron):
 
     def get(self):
+        LOG.info("Getting RouterInterface objects")
         c = ctx.get_read_context()
         f = {'device_owner': ['network:router_interface']}
         return _get_neutron_objects(key=const.NEUTRON_ROUTER_INTERFACES,
@@ -225,6 +231,7 @@ class SubnetGateway(Neutron):
         return l
 
     def get(self):
+        LOG.info("Getting SubnetGateway objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_SUBNET_GATEWAYS,
                                     func=c.plugin.get_subnets,
@@ -235,6 +242,7 @@ class SubnetGateway(Neutron):
 class FloatingIp(Neutron):
 
     def get(self):
+        LOG.info("Getting FloatingIp objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_FLOATINGIPS,
                                     func=c.plugin.get_floatingips,
@@ -252,6 +260,7 @@ class FloatingIp(Neutron):
 class Pool(Neutron):
 
     def get(self):
+        LOG.info("Getting Pool objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_POOLS,
                                     func=c.lb_plugin.get_pools,
@@ -281,6 +290,7 @@ class Pool(Neutron):
 class Member(Neutron):
 
     def get(self):
+        LOG.info("Getting Member objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_MEMBERS,
                                     func=c.lb_plugin.get_members,
@@ -297,6 +307,7 @@ class Member(Neutron):
 class Vip(Neutron):
 
     def get(self):
+        LOG.info("Getting Vip objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_VIPS,
                                     func=c.lb_plugin.get_vips,
@@ -313,6 +324,7 @@ class Vip(Neutron):
 class HealthMonitor(Neutron):
 
     def get(self):
+        LOG.info("Getting HealthMonitor objects")
         c = ctx.get_read_context()
 
         def _filter_non_associated_hm(objs):
