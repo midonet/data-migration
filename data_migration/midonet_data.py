@@ -287,6 +287,9 @@ class BgpReader(MidonetReader):
         return {"id", "localAS", "peerAS", "peerAddr"}
 
     def get_resources(self, parent=None):
+        # Skip the non-router ports
+        if parent.get_type() != const.RTR_PORT_TYPE:
+            return []
         return parent.get_bgps()
 
 
