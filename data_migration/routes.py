@@ -36,6 +36,15 @@ def _is_extra_route_convertible(route):
             route['weight'] == 100)
 
 
+def is_default_route(route):
+    return (route.get('nextHopPort') and
+            not route['learned'] and
+            route['srcNetworkAddr'] == "0.0.0.0" and
+            route['srcNetworkLength'] == 0 and
+            route['dstNetworkAddress'] == "0.0.0.0" and
+            route['dstNetworkLength'] == 0)
+
+
 class RouteMixin(object):
 
     def _find_nexthop_port_route(self, route, router_id, f):
@@ -44,7 +53,6 @@ class RouteMixin(object):
         return next((p for p in ports if f(p, route)), None)
 
     def is_network_route(self, route, router_id):
-
         def _is_network_route(p, r):
             return (r.get('nextHopPort') == p['id'] and
                     not r['learned'] and

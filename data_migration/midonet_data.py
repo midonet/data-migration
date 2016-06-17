@@ -1044,6 +1044,12 @@ class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
             LOG.debug("Skipping neutron network route " + str(obj))
             return True
 
+        # Skip default routes where the next hop port is a Neutron port.
+        if (obj['nextHopPort'] in self.n_port_and_peer_ids and
+                dm_routes.is_default_route(obj)):
+            LOG.debug("Skipping neutron default route " + str(obj))
+            return True
+
         return False
 
     def create_child_f(self, obj, p_id, parents):
