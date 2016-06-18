@@ -72,6 +72,32 @@ def _make_op_dict(res_type, obj):
     return {"type": res_type, "data": obj}
 
 
+def _is_gw_port(port, subnet):
+    return ('fixed_ips' in port and len(port['fixed_ips']) > 0 and
+            port['fixed_ips'][0]['ip_address'] == subnet['gateway_ip'] and
+            port['fixed_ips'][0]['subnet_id'] == subnet['id'])
+
+
+def _find_gw_port(ports, subnet):
+    return next((p for p in ports if _is_gw_port(p, subnet)), None)
+
+
+def _find_gw_router(ports, subnet):
+    gw_port = _find_gw_port(ports, subnet)
+    return gw_port['device_id'] if gw_port else None
+
+
+def _to_subnet_gateways(objs):
+    l = []
+    c = ctx.get_read_context()
+    f = {'device_owner': ['network:router_interface']}
+    ports = c.plugin.get_ports(context=c.n_ctx, filters=f)
+    for subnet in objs:
+        l.append({'id': subnet['id'],
+                  'gw_router_id': _find_gw_router(ports, subnet)})
+    return l
+
+
 @six.add_metaclass(abc.ABCMeta)
 class Neutron(object):
 
@@ -205,35 +231,13 @@ class RouterInterface(Neutron):
 
 class SubnetGateway(Neutron):
 
-    def _is_gw_port(self, port, subnet):
-        return ('fixed_ips' in port and len(port['fixed_ips']) > 0 and
-                port['fixed_ips'][0]['ip_address'] == subnet['gateway_ip'] and
-                port['fixed_ips'][0]['subnet_id'] == subnet['id'])
-
-    def _find_gw_port(self, ports, subnet):
-        return next((p for p in ports if self._is_gw_port(p, subnet)), None)
-
-    def _find_gw_router(self, ports, subnet):
-        gw_port = self._find_gw_port(ports, subnet)
-        return gw_port['device_id'] if gw_port else None
-
-    def _to_subnet_gateways(self, objs):
-        l = []
-        c = ctx.get_read_context()
-        f = {'device_owner': ['network:router_interface']}
-        ports = c.plugin.get_ports(context=c.n_ctx, filters=f)
-        for subnet in objs:
-            l.append({'id': subnet['id'],
-                      'gw_router_id': self._find_gw_router(ports, subnet)})
-        return l
-
     def get(self):
         LOG.info("Getting SubnetGateway objects")
         c = ctx.get_read_context()
         return _get_neutron_objects(key=const.NEUTRON_SUBNET_GATEWAYS,
                                     func=c.plugin.get_subnets,
                                     context=c.n_ctx,
-                                    post_f=self._to_subnet_gateways)
+                                    post_f=_to_subnet_gateways)
 
 
 class FloatingIp(Neutron):
