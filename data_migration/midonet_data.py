@@ -165,7 +165,7 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
             raise e
 
     def _get_port_device_id(self, port_id):
-        port_map = self._get_midonet_resources('ports')
+        port_map = self._get_midonet_resources(key='ports')
         for device_id, ports in iter(port_map.items()):
             for port in ports:
                 if port['id'] == port_id:
@@ -174,7 +174,7 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def create_objects(self):
         results = {}
-        objs = self._get_midonet_resources(self.key)
+        objs = self._get_midonet_resources(key=self.key)
 
         n_ids = self._neutron_ids(self.neutron_key) if self.neutron_key else []
 
@@ -195,7 +195,7 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def create_child_objects(self, parents):
         results = {}
-        obj_map = self._get_midonet_resources(self.key)
+        obj_map = self._get_midonet_resources(key=self.key)
         n_ids = self._neutron_ids(self.neutron_key) if self.neutron_key else []
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
@@ -263,7 +263,7 @@ class AdRouteWriter(MidonetWriter):
         return const.MN_AD_ROUTES
 
     def _get_bgp_router_id(self, bgp_id):
-        bgp_map = self._get_midonet_resources('bgp')
+        bgp_map = self._get_midonet_resources(key='bgp')
         for port_id, bgp_list in iter(bgp_map.items()):
             for bgp in bgp_list:
                 if bgp['id'] == bgp_id:
@@ -304,7 +304,7 @@ class BgpWriter(MidonetWriter):
     """
     def __init___(self, data, dry_run=None):
         super(BgpWriter, self).__init__(data, dry_run=dry_run)
-        self.port_map = self._get_midonet_resources('ports')
+        self.port_map = self._get_midonet_resources(key='ports')
 
     @property
     def key(self):
@@ -678,7 +678,7 @@ class LinkWriter(MidonetWriter):
         return "port_links"
 
     def link_ports(self, ports):
-        links = self._get_midonet_resources('port_links')
+        links = self._get_midonet_resources(key='port_links')
         port_ids = self.provider_router_port_ids
         for port_id, peer_id in iter(links.items()):
             link = (port_id, peer_id)
@@ -1010,7 +1010,7 @@ class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
 
     def __init__(self, data, dry_run=False):
         super(RouteWriter, self).__init__(data, dry_run=dry_run)
-        links = self._get_midonet_resources("port_links")
+        links = self._get_midonet_resources(key="port_links")
         n_port_ids = self._neutron_ids('ports')
         self.n_port_and_peer_ids = set()
         for port_id, peer_id in iter(links.items()):

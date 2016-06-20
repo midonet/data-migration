@@ -369,16 +369,11 @@ _NEUTRON_OBJ_MAP = {key: value for (key, value) in _NEUTRON_OBJS}
 
 
 def prepare():
-    """Prepares a map of object ID -> object from Neutron DB
-
-    It also includes 'ops' key that includes a list of ops entries that
-    will be created in migration.
-    """
+    """Prepares a map of object ID -> object from Neutron DB"""
     LOG.info('Preparing Neutron data')
     obj_map = {}
     for res_type, obj in _NEUTRON_OBJS:
         obj_map.update(obj.get())
-    obj_map["ops"] = _create_op_list(obj_map)
     return obj_map
 
 
@@ -391,16 +386,9 @@ class DataWriter(dm_data.CommonData, pr.ProviderRouterMixin,
 
     def migrate(self):
         LOG.info('Running Neutron migration process')
-        ops = self._get_neutron_resources('ops')
+        ops = _create_op_list(self._get_neutron_resources())
         for op in ops:
             LOG.debug(_print_op(op))
             obj = _NEUTRON_OBJ_MAP[op['type']]
             if not self.dry_run:
                 obj.create(op['data'])
-
-    def _create_neutron_data(self, f, *args):
-        if self.dry_run:
-            return {}
-        else:
-            mc = ctx.get_write_context()
-            return f(mc.n_ctx, *args)

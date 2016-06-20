@@ -20,16 +20,16 @@ class CommonData(object):
         self.data = data
         super(CommonData, self).__init__()
 
-    def _get_resources(self, topic, key):
+    def _get_resources(self, topic, key=None):
         data = self.data[topic]
-        return data[key]
+        return data if key is None else data[key]
 
-    def _get_midonet_resources(self, key):
-        return self._get_resources('midonet', key)
+    def _get_midonet_resources(self, key=None):
+        return self._get_resources('midonet', key=key)
 
-    def _get_neutron_resources(self, key):
-        return self._get_resources('neutron', key)
+    def _get_neutron_resources(self, key=None):
+        return self._get_resources('neutron', key=key)
 
     def _neutron_ids(self, key):
-        nd = self._get_neutron_resources(key)
+        nd = self._get_neutron_resources(key=key)
         return set(nd.keys())
