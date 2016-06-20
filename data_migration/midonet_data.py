@@ -246,6 +246,7 @@ class AdRouteReader(MidonetReader):
         return {"id", "nwPrefix", "prefixLength"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Ad Route objects for BGP " + parent.get_id())
         return parent.get_ad_routes()
 
 
@@ -290,6 +291,7 @@ class BgpReader(MidonetReader):
         # Skip the non-router ports
         if parent.get_type() != const.RTR_PORT_TYPE:
             return []
+        LOG.info("Getting BGP objects for port " + parent.get_id())
         return parent.get_bgps()
 
 
@@ -341,6 +343,7 @@ class BridgeReader(MidonetReader):
                 "outboundFilterId"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Bridge objects")
         return self.mc.mn_api.get_bridges()
 
 
@@ -380,6 +383,7 @@ class ChainReader(MidonetReader):
         return {"id", "name", "tenantId"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Chain objects")
         return self.mc.mn_api.get_chains()
 
 
@@ -418,6 +422,7 @@ class DhcpSubnetReader(MidonetReader):
         return {"name", "ipAddr", "macAddr"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting DHCP Subnet objects for bridge " + parent.get_id())
         return parent.get_dhcp_subnets()
 
     def to_dicts(self, objs, modify=None, fields=None):
@@ -495,6 +500,7 @@ class HealthMonitorReader(MidonetReader):
         return {"id", "type", "adminStateUp", "delay", "maxRetries", "timeout"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Health Monitor objects")
         return self.mc.mn_api.get_health_monitors()
 
 
@@ -531,6 +537,7 @@ class HostReader(MidonetReader):
         return {"id", "name"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Hosts objects")
         return self.mc.mn_api.get_hosts()
 
 
@@ -559,6 +566,8 @@ class HostInterfacePortReader(MidonetReader):
         return {"portId", "interfaceName"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Host Interface Port objects for host " +
+                 parent.get_host_id())
         return parent.get_ports()
 
 
@@ -601,6 +610,7 @@ class IpAddrGroupReader(MidonetReader):
         return {"id", "name"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting IP Address Group objects")
         return self.mc.mn_api.get_ip_addr_groups()
 
 
@@ -632,6 +642,8 @@ class IpAddrGroupAddrReader(MidonetReader):
         return {"addr", "version"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting IP Address Group Addr objects for IP addr group " +
+                 parent.get_id())
         return parent.get_addrs()
 
     @property
@@ -708,6 +720,7 @@ class LoadBalancerReader(MidonetReader):
         return {"id", "routerId", "adminStateUp"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Load Balancer objects")
         return self.mc.mn_api.get_load_balancers()
 
 
@@ -750,6 +763,7 @@ class PoolReader(MidonetReader):
                 "healthMonitorId"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Pool objects for lb " + parent.get_id())
         return parent.get_pools()
 
 
@@ -793,6 +807,7 @@ class PoolMemberReader(MidonetReader):
                 "weight"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Pool Member objects for pool " + parent.get_id())
         return parent.get_pool_members()
 
 
@@ -837,6 +852,7 @@ class PortReader(MidonetReader):
                 "interfaceName"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Port objects")
         return parent.get_ports()
 
 
@@ -919,6 +935,7 @@ class PortGroupReader(MidonetReader):
         return {"id", "name", "tenantId", "stateful"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Port Group objects")
         return self.mc.mn_api.get_port_groups()
 
 
@@ -951,6 +968,8 @@ class PortGroupPortReader(MidonetReader):
         return {"portId"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Port Group Port objects for port group " +
+                 parent.get_id())
         return parent.get_ports()
 
     @property
@@ -988,6 +1007,7 @@ class RouteReader(MidonetReader):
                 "nextHopGateway", "nextHopPort", "type", "weight"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Route objects for router " + parent.get_id())
         return parent.get_routes()
 
 
@@ -1077,6 +1097,7 @@ class RouterReader(MidonetReader):
                 "inboundFilterId", "outboundFilterId"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Router objects")
         return self.mc.mn_api.get_routers()
 
 
@@ -1128,6 +1149,7 @@ class RuleReader(MidonetReader):
                 "fragmentPolicy"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Rule objects for chain " + parent.get_id())
         return parent.get_rules()
 
 
@@ -1245,6 +1267,7 @@ class TunnelZoneReader(MidonetReader):
         return {"id", "type", "name"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Tunnel Zone objects")
         return self.mc.mn_api.get_tunnel_zones()
 
 
@@ -1275,6 +1298,8 @@ class TunnelZoneHostReader(MidonetReader):
         return {"hostId", "ipAddress"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting Tunnel Zone Host objects for tunnel zone " +
+                 parent.get_id())
         return parent.get_hosts()
 
 
@@ -1306,6 +1331,7 @@ class VipReader(MidonetReader):
                 "sessionPersistence"}
 
     def get_resources(self, parent=None):
+        LOG.info("Getting VIP objects")
         return self.mc.mn_api.get_vips()
 
 
