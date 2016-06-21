@@ -146,9 +146,11 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
         print("%d updated" % len(self.updated))
         print("%d skipped due to conflict" % len(self.conflicted))
         print("%d skipped for other reasons" % len(self.skipped))
-        LOG.debug("The skip reasons:")
-        for skip in self.skipped:
-            LOG.debug("Object " + str(skip['object']) + " skipped because " +
+
+        if self.skipped:
+            print("The skip reasons:")
+            for skip in self.skipped:
+                print("Object " + str(skip['object']) + " skipped because " +
                       skip['reason'])
 
     def _add_skip(self, obj, reason):
