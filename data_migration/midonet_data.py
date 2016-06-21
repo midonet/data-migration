@@ -567,7 +567,7 @@ class HostInterfacePortReader(MidonetReader):
 
     def get_resources(self, parent=None):
         LOG.info("Getting Host Interface Port objects for host " +
-                 parent.get_host_id())
+                 parent.get_id())
         return parent.get_ports()
 
 
@@ -852,7 +852,7 @@ class PortReader(MidonetReader):
                 "interfaceName"}
 
     def get_resources(self, parent=None):
-        LOG.info("Getting Port objects")
+        LOG.info("Getting Port objects for device " + parent.get_id())
         return parent.get_ports()
 
 
