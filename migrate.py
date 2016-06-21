@@ -18,6 +18,8 @@ from __future__ import print_function
 import argparse
 from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
+from data_migration import provider_router as pr
+from data_migration import routes as er
 import json
 import logging
 from oslo_config import cfg
@@ -70,34 +72,28 @@ def main():
     # Start the migration
     if args.command == "prepare":
         n_data = nd.prepare()
-        mm = md.DataReader(n_data)
         output = {
             "neutron": n_data,
-            "midonet": mm.prepare()
+            "midonet": md.prepare(n_data)
         }
         print(json.dumps(output))
     elif args.command == "migrate":
         source = sys.stdin.readline()
         json_source = json.loads(source)
 
-        nm = nd.DataWriter(json_source, dry_run=dry_run)
-        nm.migrate()
-
-        mm = md.DataWriter(json_source, dry_run=dry_run)
-        mm.migrate()
+        nd.migrate(json_source, dry_run=dry_run)
+        md.migrate(json_source, dry_run=dry_run)
     elif args.command == "pr2er":
         if not args.tenant:
             _exit_on_error("tenant is required for this command", parser)
 
         source = sys.stdin.readline()
         json_source = json.loads(source)
-        nm = nd.DataWriter(json_source, dry_run=dry_run)
-        nm.provider_router_to_edge_router(args.tenant)
+        pr.migrate(json_source, args.tenant, dry_run=dry_run)
     elif args.command == "extraroutes":
         source = sys.stdin.readline()
         json_source = json.loads(source)
-        nm = nd.DataWriter(json_source, dry_run=dry_run)
-        nm.migrate_routes()
+        er.migrate(json_source, dry_run=dry_run)
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

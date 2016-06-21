@@ -16,6 +16,11 @@
 RTR_PORT_TYPE = "Router"
 BRG_PORT_TYPE = "Bridge"
 
+ROUTER_INTERFACE_PORT_TYPE = "network:router_interface"
+ROUTER_GATEWAY_PORT_TYPE = "network:router_gateway"
+
+STATUS_PENDING_DELETE = "PENDING_DELETE"
+
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
 PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'
@@ -32,7 +37,6 @@ NEUTRON_SUBNETS = "subnets"
 NEUTRON_PORTS = "ports"
 NEUTRON_ROUTERS = "routers"
 NEUTRON_ROUTER_INTERFACES = "router_interfaces"
-NEUTRON_SUBNET_GATEWAYS = "subnet_gateways"
 NEUTRON_FLOATINGIPS = "floating_ips"
 NEUTRON_POOLS = "pools"
 NEUTRON_MEMBERS = "members"

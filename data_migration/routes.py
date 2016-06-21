@@ -15,6 +15,7 @@
 
 from data_migration import constants as const
 from data_migration import context as ctx
+from data_migration import data as dm_data
 import logging
 
 LOG = logging.getLogger(name="data_migration")
@@ -109,10 +110,18 @@ class ExtraRoutesMixin(RouteMixin):
             if not self.dry_run:
                 mc.l3_plugin.update_router(mc.n_ctx, router_id, n_router)
 
+
+class ExtraRoute(dm_data.CommonData, ExtraRoutesMixin):
+
     def migrate_routes(self):
-        LOG.info('Running extra routes migration process')
         n_router_ids = self._neutron_ids("routers")
 
         # Process existing Neutron routers first
         for router_id in n_router_ids:
             self.routes_to_extra_routes(router_id)
+
+
+def migrate(data, dry_run=False):
+    LOG.info('Running extra routes migration process')
+    er = ExtraRoute(data, dry_run=dry_run)
+    er.migrate_routes()

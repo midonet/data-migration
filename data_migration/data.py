@@ -13,11 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from data_migration import context
+
 
 class CommonData(object):
 
-    def __init__(self, data):
+    def __init__(self, data, dry_run=None):
+        self.mc = context.get_write_context()
         self.data = data
+        self.dry_run = dry_run
         super(CommonData, self).__init__()
 
     def _get_resources(self, topic, key=None):
@@ -47,3 +51,40 @@ class CommonData(object):
 
     def _get_midonet_resource_map(self, key):
         return self._get_resource_map('midonet', key)
+
+    def _create_neutron_data(self, f, *args):
+        if self.dry_run:
+            return {}
+        else:
+            return f(self.mc.n_ctx, *args)
+
+
+class DataCounterMixin(object):
+
+    def __init__(self):
+        self.skipped = []
+        self.created = []
+        self.updated = []
+        self.conflicted = []
+        super(DataCounterMixin, self).__init__()
+
+    def add_skip(self, obj, reason):
+        self.skipped.append({
+            "object": obj,
+            "reason": reason
+        })
+
+    def print_summary(self):
+        print("\n")
+        print("***** %s *****\n" % self.key)
+        print("%d created" % len(self.created))
+        print("%d updated" % len(self.updated))
+        print("%d skipped due to conflict" % len(self.conflicted))
+        print("%d skipped for other reasons" % len(self.skipped))
+
+        if self.skipped:
+            print("The skip reasons:")
+            for skip in self.skipped:
+                print("Object " + str(skip['object']) + " skipped because " +
+                      skip['reason'])
+        print("\n")
