@@ -213,6 +213,10 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
+                if self.dry_run:
+                    self.created.append(obj)
+                    continue
+
                 o = self._create_data(self.create_child_f(obj, p_id, parents),
                                       obj)
                 if o:
