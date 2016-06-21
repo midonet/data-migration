@@ -24,7 +24,6 @@ from oslo_config import cfg
 import sys
 
 LOG = logging.getLogger(name="data_migration")
-logging.basicConfig(level=logging.INFO)
 
 
 def _exit_on_error(msg, parser):
@@ -65,7 +64,8 @@ def main():
     dry_run = args.dryrun
 
     # For now, just allow DEBUG or INFO
-    LOG.setLevel(level=logging.DEBUG if args.debug else logging.INFO)
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(level=log_level)
 
     # Start the migration
     if args.command == "prepare":
