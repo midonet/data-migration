@@ -154,6 +154,10 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def _create_data(self, f, obj, *args, **kwargs):
         try:
+            if self.dry_run:
+                self.created.append(obj)
+                return None
+
             o = f(*args, **kwargs)
             self.created.append(obj)
             return o
@@ -185,9 +189,6 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
                 self.skipped.append(obj)
                 continue
 
-            if self.dry_run:
-                continue
-
             o = self._create_data(self.create_f(obj), obj)
             if o:
                 results[obj_id] = o
@@ -204,9 +205,6 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
-                if self.dry_run:
-                    continue
-
                 o = self._create_data(self.create_child_f(obj, p_id, parents),
                                       obj)
                 if o:
@@ -703,14 +701,11 @@ class LinkWriter(MidonetWriter):
 
             LOG.debug("Linking ports " + str(link))
             if self.dry_run:
+                self.created.append(link)
                 continue
 
             port = _get_obj(self.mc.mn_api.get_port, port_id, cache_map=ports)
-            o = self._create_data(self.mc.mn_api.link, link, port, peer_id)
-            if o:
-                self.created.append(link)
-            else:
-                self.conflicted.append(link)
+            self._create_data(self.mc.mn_api.link, link, port, peer_id)
 
 
 class LoadBalancerReader(MidonetReader):
