@@ -306,7 +306,11 @@ class BgpWriter(MidonetWriter):
     """
     def __init__(self, data, dry_run=None):
         super(BgpWriter, self).__init__(data, dry_run=dry_run)
-        self.port_map = self._get_midonet_resources(key='ports')
+        dev_port_map = self._get_midonet_resources(key='ports')
+        ports = [p for port_list in dev_port_map.values() for p in port_list]
+        self.port_map = dict()
+        for p in ports:
+            self.port_map[p['id']] = p
 
     @property
     def key(self):
