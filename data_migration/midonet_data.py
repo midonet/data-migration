@@ -304,7 +304,7 @@ class BgpWriter(MidonetWriter):
               "peerAS": Int,
               "peerAddr": String}, ...]}, ...,
     """
-    def __init___(self, data, dry_run=None):
+    def __init__(self, data, dry_run=None):
         super(BgpWriter, self).__init__(data, dry_run=dry_run)
         self.port_map = self._get_midonet_resources(key='ports')
 
