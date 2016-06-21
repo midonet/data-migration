@@ -146,6 +146,16 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
         print("%d updated" % len(self.updated))
         print("%d skipped due to conflict" % len(self.conflicted))
         print("%d skipped for other reasons" % len(self.skipped))
+        LOG.debug("The skip reasons:")
+        for skip in self.skipped:
+            LOG.debug("Object " + str(skip['obj']) + " skipped because " +
+                      skip['reason'])
+
+    def _add_skip(self, obj, reason):
+        self.skipped.append({
+            "object": obj,
+            "reason": reason
+        })
 
     def _update_data(self, f, obj, *args, **kwargs):
         o = f(*args, **kwargs)
@@ -186,7 +196,6 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
             LOG.debug("Creating " + self.key + " obj " + str(obj))
             obj_id = obj['id']
             if self.skip_create_object(obj, n_ids=n_ids):
-                self.skipped.append(obj)
                 continue
 
             o = self._create_data(self.create_f(obj), obj)
@@ -201,7 +210,6 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
                 if self.skip_create_object(obj, parent_id=p_id, n_ids=n_ids):
-                    self.skipped.append(obj)
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
@@ -232,7 +240,10 @@ class MidonetWriter(dm_data.CommonData, pr.ProviderRouterMixin):
 
     def skip_create_object(self, obj, parent_id=None, n_ids=None):
         if n_ids:
-            return obj['id'] in n_ids
+            is_neutron_generated = obj['id'] in n_ids
+            if is_neutron_generated:
+                self._add_skip(obj['id'], "Neutron generated object")
+            return is_neutron_generated
         else:
             return False
 
@@ -329,6 +340,7 @@ class BgpWriter(MidonetWriter):
         port = self.port_map[parent_id]
         if port['type'] != const.RTR_PORT_TYPE:
             LOG.debug("Skipping BGP on non-router port " + str(obj))
+            self._add_skip(port['id'], "BGP on non-router port")
             return True
         return False
 
@@ -397,7 +409,10 @@ class ChainWriter(MidonetWriter):
         return const.MN_CHAINS
 
     def skip_create_object(self, obj, parent_id=None, n_ids=None):
-        return _is_neutron_chain_name(obj['name'])
+        skip = _is_neutron_chain_name(obj['name'])
+        if skip:
+            self._add_skip(obj['id'], "Neutron generated chain")
+        return skip
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_chain()
@@ -585,10 +600,12 @@ class HostInterfacePortWriter(MidonetWriter):
         pr_port_ids = self.provider_router_port_ids
         if obj['portId'] in pr_port_ids:
             LOG.debug("Skipping Provider Router port binding " + str(obj))
+            self._add_skip(obj['portId'], "Provider Router port binding")
             return True
 
         if _is_lb_hm_interface(obj['interfaceName']):
             LOG.debug("Skipping HM port binding " + str(obj))
+            self._add_skip(obj['portId'], "Health monitor port binding")
             return True
 
         return False
@@ -696,7 +713,7 @@ class LinkWriter(MidonetWriter):
             # Skip the provider router ports
             if port_id in port_ids or peer_id in port_ids:
                 LOG.debug("Skipping Provider Router port linking " + str(link))
-                self.skipped.append(link)
+                self._add_skip(link, "Provider Router port linking")
                 continue
 
             LOG.debug("Linking ports " + str(link))
@@ -746,6 +763,7 @@ class LoadBalancerWriter(MidonetWriter):
         # by Neutron.
         if obj['routerId'] in self.n_router_ids:
             LOG.debug("Skipping LB on Neutron router " + str(obj))
+            self._add_skip(obj['id'], "Load balancer on a Neutron router")
             return True
         return False
 
@@ -920,7 +938,11 @@ class PortWriter(MidonetWriter):
         2. Peer ID, if present, matching one of Neutron port IDs
         """
         peer_id = obj["peerId"]
-        return obj["id"] in n_ids or (peer_id is not None and peer_id in n_ids)
+        is_neutron_generated = obj["id"] in n_ids or (peer_id is not None and
+                                                      peer_id in n_ids)
+        if is_neutron_generated:
+            self._add_skip(obj['id'], "Neutron generated port")
+        return is_neutron_generated
 
 
 class PortGroupReader(MidonetReader):
@@ -1040,16 +1062,19 @@ class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
     def skip_create_object(self, obj, parent_id=None, n_ids=None):
         if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
+            self._add_skip(obj['id'], "Learned route")
             return True
 
         # Skip the port routes
         if self.is_port_route(obj, parent_id):
             LOG.debug("Skipping port route " + str(obj))
+            self._add_skip(obj['id'], "Local port route")
             return True
 
         # Skip metadata routes
         if obj['dstNetworkAddr'] == const.METADATA_ROUTE_IP:
             LOG.debug("Skipping metadata route " + str(obj))
+            self._add_skip(obj['id'], "Metadata service route")
             return True
 
         # Skip the routes whose next hop port is either the neutron ports or
@@ -1057,12 +1082,14 @@ class RouteWriter(MidonetWriter, dm_routes.RouteMixin):
         if (obj['nextHopPort'] in self.n_port_and_peer_ids and
                 self.is_network_route(obj, parent_id)):
             LOG.debug("Skipping neutron network route " + str(obj))
+            self._add_skip(obj['id'], "Neutron generated network route")
             return True
 
         # Skip default routes where the next hop port is a Neutron port.
         if (obj['nextHopPort'] in self.n_port_and_peer_ids and
                 dm_routes.is_default_route(obj)):
             LOG.debug("Skipping neutron default route " + str(obj))
+            self._add_skip(obj['id'], "Neutron generated default route")
             return True
 
         return False
