@@ -41,7 +41,7 @@ def is_default_route(route):
             not route['learned'] and
             route['srcNetworkAddr'] == "0.0.0.0" and
             route['srcNetworkLength'] == 0 and
-            route['dstNetworkAddress'] == "0.0.0.0" and
+            route['dstNetworkAddr'] == "0.0.0.0" and
             route['dstNetworkLength'] == 0)
 
 
@@ -58,7 +58,7 @@ class RouteMixin(object):
                     not r['learned'] and
                     r['srcNetworkAddr'] == "0.0.0.0" and
                     r['srcNetworkLength'] == 0 and
-                    r['dstNetworkAddress'] == p['networkAddress'] and
+                    r['dstNetworkAddr'] == p['networkAddress'] and
                     r['dstNetworkLength'] == p['networkLength'])
 
         return self._find_nexthop_port_route(route, router_id,
