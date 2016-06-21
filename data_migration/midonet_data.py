@@ -1521,7 +1521,6 @@ class DataWriter(object):
         self.pgp.print_summary()
         self.route.print_summary()
         self.router.print_summary()
-        self.route.print_summary()
         self.rule.print_summary()
         self.tz.print_summary()
         self.tzh.print_summary()
