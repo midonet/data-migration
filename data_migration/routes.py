@@ -93,7 +93,7 @@ class ExtraRoutesMixin(RouteMixin):
 
         return extra_routes
 
-    def routes_to_extra_routes(self, router_id, delete=True):
+    def routes_to_extra_routes(self, router_id, dest_router=None, delete=True):
         mc = ctx.get_write_context()
         # Get all the "normal" routes, store and delete them
         extra_route_map = self._get_extra_route_map(router_id)
@@ -103,12 +103,18 @@ class ExtraRoutesMixin(RouteMixin):
                 if not self.dry_run:
                     mc.mn_api.delete_route(route_id)
 
+        if dest_router:
+            dest_router_id = dest_router['id']
+        else:
+            dest_router_id = router_id
+
         if extra_route_map:
-            n_router = mc.l3_plugin.get_router(mc.n_ctx, router_id)
-            n_router["router"]["routes"] = extra_route_map.values()
-            LOG.debug("Updating Neutron router " + str(n_router))
+            routes = extra_route_map.values()
+            LOG.debug("Updating Neutron router with routes: " + str(routes))
             if not self.dry_run:
-                mc.l3_plugin.update_router(mc.n_ctx, router_id, n_router)
+                n_router = mc.l3_plugin.get_router(mc.n_ctx, dest_router_id)
+                n_router["router"]["routes"] = routes
+                mc.l3_plugin.update_router(mc.n_ctx, dest_router_id, n_router)
 
 
 class ExtraRoute(dm_data.CommonData, ExtraRoutesMixin):

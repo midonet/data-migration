@@ -54,7 +54,7 @@ class CommonData(object):
 
     def _create_neutron_data(self, f, *args):
         if self.dry_run:
-            return {}
+            return None
         else:
             return f(self.mc.n_ctx, *args)
 
