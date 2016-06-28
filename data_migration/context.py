@@ -17,6 +17,7 @@ from data_migration import constants as cnst
 from midonetclient import api
 from neutron.common import config as n_config  # noqa
 from neutron import context as ncntxt
+from neutron.db import l3_db
 from neutron_lbaas.db.loadbalancer import loadbalancer_db
 from oslo_config import cfg
 from oslo_utils import importutils
@@ -32,8 +33,24 @@ def _import_plugin(clazz_path):
     def _setup_rpc(_self):
         pass
 
+    def _notify_router_deleted(_self, _context, _router_id):
+        pass
+
+    def _notify_routers_updated(_self, _context, _router_ids, _operation=None,
+                                _data=None):
+        pass
+
+    def _notify_router_interface_action(_self, _context,
+                                        _router_interface_info, _action):
+        pass
+
     # HACK to get around the issue of the plugin setting up rpc
     setattr(clazz, 'setup_rpc', _setup_rpc)
+    l3_db.L3RpcNotifierMixin.notify_router_deleted = _notify_router_deleted
+    l3_db.L3RpcNotifierMixin.notify_routers_updated = _notify_routers_updated
+    l3_db.L3_NAT_db_mixin.notify_router_interface_action = (
+        _notify_router_interface_action)
+
     return clazz()
 
 
@@ -71,6 +88,9 @@ class MigrationWriteContext(MigrationContext):
         super(MigrationWriteContext, self).__init__()
         self.client = importutils.import_object(self.config.client,
                                                 self.config)
+        # This is required to bypass the issue when loading service plugins in
+        # Liberty onward.
+        cfg.CONF.set_override('core_plugin', cnst.V2_PLUGIN)
 
 
 def get_read_context():

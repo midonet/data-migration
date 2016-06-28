@@ -14,6 +14,7 @@
 #    under the License.
 
 from data_migration import constants as const
+from data_migration import context as ctx
 from data_migration import data as dm_data
 from data_migration import routes as er
 import logging
@@ -72,6 +73,10 @@ class ProviderRouter(dm_data.CommonData, ProviderRouterMixin,
                      er.ExtraRoutesMixin):
 
     def provider_router_to_edge_router(self, tenant):
+        if self._edge_router_exists():
+            LOG.info("Edge router(s) already exists.  Delete before running "
+                     "this command. " + str())
+            return
 
         edge_router = self._create_edge_router(tenant)
         for port in self.provider_router_ports.values():
@@ -90,6 +95,12 @@ class ProviderRouter(dm_data.CommonData, ProviderRouterMixin,
         # Migrate extra routes
         self.routes_to_extra_routes(self.provider_router['id'],
                                     dest_router=edge_router, delete=False)
+
+    def _edge_router_exists(self):
+        # Find the edge router
+        routers = self.mc.l3_plugin.get_routers(
+            self.mc.n_ctx, filters={"name": [const.PROVIDER_ROUTER_NAME]})
+        return len(routers) > 0
 
     def _link_external_subnets(self, edge_router):
         edge_router_id = edge_router['id'] if edge_router else None
@@ -110,9 +121,14 @@ class ProviderRouter(dm_data.CommonData, ProviderRouterMixin,
         return self._create_neutron_data(self.mc.l3_plugin.create_router,
                                          router_obj)
 
+    def _get_host_name_from_host_id(self, host_id):
+        hosts = self._get_midonet_resources("hosts")
+        return next((h["name"] for h in hosts if h["id"] == host_id), None)
+
     def _create_uplink_port(self, port, upl_net, upl_sub, tenant):
         net_id = upl_net['id'] if upl_net else None
         sub_id = upl_sub['id'] if upl_sub else None
+        host_name = self._get_host_name_from_host_id(port['hostId'])
         port_obj = {'port': {'name': port['id'] + "_uplink_port",
                              'tenant_id': tenant,
                              'network_id': net_id,
@@ -122,7 +138,7 @@ class ProviderRouter(dm_data.CommonData, ProviderRouterMixin,
                              'fixed_ips': [
                                  {'subnet_id': sub_id,
                                   'ip_address': port['portAddress']}],
-                             'binding:host_id': port['hostId'],
+                             'binding:host_id': host_name,
                              'binding:profile': {
                                  'interface_name': port['interfaceName']},
                              'admin_state_up': port['adminStateUp']}}
@@ -204,3 +220,54 @@ def migrate(data, tenant, dry_run=False):
     LOG.info('Running Edge Router migration process')
     pr = ProviderRouter(data, dry_run=dry_run)
     pr.provider_router_to_edge_router(tenant)
+
+
+def delete_edge_router():
+    LOG.info("Deleting Edge Router and Uplink Networks")
+    mc = ctx.get_write_context()
+
+    # Remove Uplink networks
+    nets = mc.plugin.get_networks(mc.n_ctx)
+    for net in nets:
+        net_type = net.get("provider:network_type")
+        if net_type == "uplink":
+            ports = mc.plugin.get_ports(
+                mc.n_ctx,
+                filters={"network_id": [net["id"]]})
+            for port in ports:
+                if port['device_id']:
+                    iface_obj = {'port_id': port["id"]}
+                    LOG.debug("Removing uplink net router interface: " +
+                              str(iface_obj))
+                    mc.l3_plugin.remove_router_interface(mc.n_ctx,
+                                                         port['device_id'],
+                                                         iface_obj)
+                else:
+                    LOG.debug("Removing uplink net port: " + str(port))
+                    mc.plugin.delete_port(mc.n_ctx, port['id'],
+                                          l3_port_check=False)
+
+            LOG.debug("Removing Uplink network: " + str(net))
+            mc.plugin.delete_network(mc.n_ctx, net["id"])
+
+    # There should not be more than one of these found, but in case data got
+    # corrupted, clean them up.
+    routers = mc.l3_plugin.get_routers(
+        mc.n_ctx, filters={"name": [const.PROVIDER_ROUTER_NAME]})
+    for router in routers:
+        er_id = router["id"]
+
+        # Unlink from external subnets
+        ports = mc.plugin.get_ports(
+            mc.n_ctx,
+            filters={'device_owner': [const.ROUTER_INTERFACE_PORT_TYPE],
+                     'device_id': [er_id]})
+
+        for port in ports:
+            iface_obj = {'port_id': port["id"]}
+            LOG.debug("Removing Edge Router Intf: " + str(iface_obj))
+            mc.l3_plugin.remove_router_interface(mc.n_ctx, er_id, iface_obj)
+
+        # Remove edge router
+        LOG.debug("Removing Edge Router: " + str(router))
+        mc.l3_plugin.delete_router(mc.n_ctx, er_id)

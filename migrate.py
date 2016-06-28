@@ -46,6 +46,8 @@ def main():
                              '\tmigrate: migrate data from JSON input\n'
                              '\tpr2er: convert provider router to edge router'
                              '\n'
+                             '\tdeler: delete edge router and uplink networks'
+                             '\n'
                              '\textraroutes: convert midonet routes to Neutron'
                              'extra routes')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
@@ -90,6 +92,8 @@ def main():
         source = sys.stdin.readline()
         json_source = json.loads(source)
         pr.migrate(json_source, args.tenant, dry_run=dry_run)
+    elif args.command == "deler":
+        pr.delete_edge_router()
     elif args.command == "extraroutes":
         source = sys.stdin.readline()
         json_source = json.loads(source)
