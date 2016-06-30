@@ -52,3 +52,6 @@ Commands::
      extraroutes
          Convert MidoNet routes to Neutron extra routes.  The input to this
          command is the JSON output from the 'prepare' command.
+     antispoof
+         Convert MidoNet diable anti-spoof rules into Neutron allowed address
+         pairs.

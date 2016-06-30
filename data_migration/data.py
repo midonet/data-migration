@@ -49,6 +49,9 @@ class CommonData(object):
             res_map[res['id']] = res
         return res_map
 
+    def _get_midonet_resource_list(self, key):
+        return self._get_resource_list('midonet', key)
+
     def _get_midonet_resource_map(self, key):
         return self._get_resource_map('midonet', key)
 

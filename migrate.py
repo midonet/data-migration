@@ -16,6 +16,7 @@
 
 from __future__ import print_function
 import argparse
+from data_migration import antispoof as asp
 from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
 from data_migration import provider_router as pr
@@ -49,7 +50,9 @@ def main():
                              '\tdeler: delete edge router and uplink networks'
                              '\n'
                              '\textraroutes: convert midonet routes to Neutron'
-                             'extra routes')
+                             'extra routes\n'
+                             '\tantispoof: convert disabled antispoof rules to'
+                             'allowed address pairs')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -98,6 +101,10 @@ def main():
         source = sys.stdin.readline()
         json_source = json.loads(source)
         er.migrate(json_source, dry_run=dry_run)
+    elif args.command == "antispoof":
+        source = sys.stdin.readline()
+        json_source = json.loads(source)
+        asp.migrate(json_source, dry_run=dry_run)
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 
