@@ -15,13 +15,19 @@
 
 import data_migration
 from data_migration import constants as cnst
+import json
 import mock
+from mock import patch
+import os
 from oslo_utils import importutils
 import test_input as ti
 import testtools
 
-
+# To avoid dealing with import statements in these modules that may attempt to
+# import what we want to mock too early, import them dynamically after all the
+# mocks are setup.
 NEUTRON_DATA_MODULE = "data_migration.neutron_data"
+ANTISPOOF_MODULE = "data_migration.antispoof"
 
 
 def _get_ports(context=None, filters=None):
@@ -32,18 +38,21 @@ def _get_ports(context=None, filters=None):
         return ti.NEUTRON_PORTS
 
 
-class TestDataReader(testtools.TestCase):
+class BaseTestCase(testtools.TestCase):
 
     def setUp(self):
         self._setup_mock()
-
-        # To avoid dealing with import statements in the neutron data module
-        # that may attempt to import what we want to mock too early, import it
-        # dynamically after all the mocks are setup.
-        self.n_test_obj = importutils.import_module(NEUTRON_DATA_MODULE)
-        super(TestDataReader, self).setUp()
+        super(BaseTestCase, self).setUp()
 
     def _setup_mock(self):
+        pmc_mock = mock.MagicMock()
+        modules = {
+            'midonetclient': pmc_mock
+        }
+
+        self.module_patcher = patch.dict('sys.modules', modules)
+        self.module_patcher.start()
+
         context_mock = mock.MagicMock()
         data_migration.context = context_mock
         read_context_mock = mock.MagicMock()
@@ -65,6 +74,13 @@ class TestDataReader(testtools.TestCase):
         self.lb_plugin_mock.get_vips.return_value = ti.NEUTRON_VIPS
         self.lb_plugin_mock.get_health_monitors.return_value = (
             ti.NEUTRON_HEALTH_MONITORS)
+
+
+class TestDataReader(BaseTestCase):
+
+    def setUp(self):
+        super(TestDataReader, self).setUp()
+        self.n_test_obj = importutils.import_module(NEUTRON_DATA_MODULE)
 
     def _assert_neutron_objs(self, result, res_key, exp_objs):
         res_objs = result.get(res_key)
@@ -97,3 +113,33 @@ class TestDataReader(testtools.TestCase):
         self._assert_neutron_objs(result, cnst.NEUTRON_VIPS, ti.NEUTRON_VIPS)
         self._assert_neutron_objs(result, cnst.NEUTRON_HEALTH_MONITORS,
                                   ti.NEUTRON_HEALTH_MONITORS)
+
+
+class TestAntiSpoof(BaseTestCase):
+
+    def setUp(self):
+        super(TestAntiSpoof, self).setUp()
+        self.test_module = importutils.import_module(ANTISPOOF_MODULE)
+
+    def test_antispoof_enabled(self):
+        f = os.path.join(os.path.dirname(__file__), "antispoof_enabled.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.AntiSpoof(json.loads(in_data),
+                                              dry_run=False)
+        test_obj.migrate()
+
+        self.assertEqual(0, len(test_obj.ip_as_rules))
+        self.assertEqual(0, len(test_obj.mac_as_rules))
+        self.assertEqual(0, len(test_obj.updated))
+
+    def test_antispoof_rules_removed(self):
+        f = os.path.join(os.path.dirname(__file__),
+                         "antispoof_rules_removed.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.AntiSpoof(json.loads(in_data),
+                                              dry_run=False)
+        test_obj.migrate()
+
+        self.assertEqual(1, len(test_obj.ip_as_rules))
+        self.assertEqual(1, len(test_obj.mac_as_rules))
+        self.assertEqual(1, len(test_obj.updated))

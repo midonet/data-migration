@@ -33,7 +33,7 @@ def _is_mac_anti_spoof_rule(rule):
             rule["dlSrc"])
 
 
-class AntiSpoof(dm_data.CommonData):
+class AntiSpoof(dm_data.CommonData, dm_data.DataCounterMixin):
 
     def __init__(self, data, dry_run=None):
         super(AntiSpoof, self).__init__(data, dry_run=dry_run)
@@ -76,6 +76,7 @@ class AntiSpoof(dm_data.CommonData):
                 self.ip_as_rules.append(port)
                 if not self.dry_run:
                     self.mc.plugin.update_port(self.mc.n_ctx, port["id"], p)
+                    self.updated.append(p)
 
             mac_as_rules = [r for r in chain_rules
                             if _is_mac_anti_spoof_rule(r)]
@@ -89,6 +90,7 @@ class AntiSpoof(dm_data.CommonData):
         print("***** Anti-Spoof Migration *****\n")
         print("%d IP antispoof replaced" % len(self.ip_as_rules))
         print("%d MAC antispoof found" % len(self.mac_as_rules))
+        print("%d ports updated" % len(self.updated))
         print("\n")
 
 
