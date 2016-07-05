@@ -128,6 +128,7 @@ class TestAntiSpoof(BaseTestCase):
         test_obj = self.test_module.AntiSpoof(json.loads(in_data),
                                               dry_run=False)
         test_obj.migrate()
+        test_obj.print_summary()
 
         self.assertEqual(0, len(test_obj.ip_as_rules))
         self.assertEqual(0, len(test_obj.mac_as_rules))
@@ -140,6 +141,7 @@ class TestAntiSpoof(BaseTestCase):
         test_obj = self.test_module.AntiSpoof(json.loads(in_data),
                                               dry_run=False)
         test_obj.migrate()
+        test_obj.print_summary()
 
         self.assertEqual(1, len(test_obj.ip_as_rules))
         self.assertEqual(1, len(test_obj.mac_as_rules))
