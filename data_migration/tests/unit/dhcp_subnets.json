@@ -1,0 +1,2 @@
+{"midonet": {"bridges": [{"adminStateUp": true, "id": "49d50278-890b-4eae-9166-89831c8c217f", "inboundFilterId": null, "name":
+"tmp-bridge", "outboundFilterId": null, "tenantId": ""}], "dhcp_subnets": {"49d50278-890b-4eae-9166-89831c8c217f": [{"hosts": [{"ipAddr": "10.0.0.2", "macAddr": "fa:16:3e:59:9f:9b", "name": null}], "defaultGateway": "10.0.0.1", "dnsServerAddrs": ["8.8.8.8"], "enabled": true, "interfaceMTU": 0, "opt121Routes": [], "serverAddr": "10.0.0.1", "subnetLength": 24, "subnetPrefix": "10.0.0.0"}]}}}

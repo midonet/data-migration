@@ -199,13 +199,22 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
             parent_cache.update(self.created_map[p_key])
         return parent_cache
 
+    def _create_child_sub_objects(self, obj, o):
+        self.process_child_sub_objects(obj, o)
+        if hasattr(o, 'get_id'):
+            self.created_map[self.key][o.get_id()] = o
+
+    def _get_parent_object(self, p_id):
+        return None
+
     def _create_child_objects(self):
         parents = self._build_parent_cache()
         obj_map = self._get_midonet_resources(key=self.key)
         n_ids = self._neutron_ids(self.neutron_key) if self.neutron_key else []
         for p_id, objs in iter(obj_map.items()):
             for obj in objs:
-                if self.skip_create_object(obj, parent_id=p_id, n_ids=n_ids):
+                if self.skip_create_object(obj, parent_id=p_id, n_ids=n_ids,
+                                           parents=parents):
                     continue
 
                 LOG.debug("Creating " + self.key + " child obj " + str(obj))
@@ -216,9 +225,7 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
                 o = self._create_data(self.create_child_f(obj, p_id, parents),
                                       obj)
                 if o:
-                    self.process_child_sub_objects(obj, o)
-                    if hasattr(o, 'get_id'):
-                        self.created_map[self.key][o.get_id()] = o
+                    self._create_child_sub_objects(obj, o)
 
     @property
     def key(self):
@@ -241,7 +248,8 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
     def process_child_sub_objects(self, data, obj):
         pass
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         if n_ids:
             is_neutron_generated = obj['id'] in n_ids
             if is_neutron_generated:
@@ -249,6 +257,46 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
             return is_neutron_generated
         else:
             return False
+
+
+class NoIdMixin(object):
+
+    def __init__(self, data, created_map, dry_run=False):
+        super(NoIdMixin, self).__init__(data, created_map, dry_run=dry_run)
+        self.no_id_res_map = {}
+
+    @property
+    def _get_parent_resource_f(self):
+        return None
+
+    def _get_sub_resources(self, parent):
+        return []
+
+    def _sub_resource_cmp_field(self, res):
+        return None
+
+    @property
+    def _sub_resource_cmp_key(self):
+        return ""
+
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
+        parent = _get_obj(self._get_parent_resource_f, parent_id,
+                          cache_map=parents)
+        children = self.no_id_res_map.get(parent_id)
+        if not children:
+            children = self._get_sub_resources(parent)
+            self.no_id_res_map[parent_id] = children
+        res = next((c for c in children
+                    if (self._sub_resource_cmp_field(c) ==
+                        obj[self._sub_resource_cmp_key])), None)
+        if res:
+            LOG.debug("Duplicate " + self.key + " exists: " + str(res))
+            self.add_skip(obj[self._sub_resource_cmp_key],
+                          self._sub_resource_cmp_key + " of " + self.key +
+                          " already exists")
+            return True
+        return False
 
 
 class AdRouteBase(object):
@@ -360,7 +408,8 @@ class BgpWriter(BgpBase, MidonetWriter):
                 .asn(obj['peerAS'])
                 .address(obj['peerAddr']).create)
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         port = self.port_map[parent_id]
         if port['type'] != const.RTR_PORT_TYPE:
             LOG.debug("Skipping BGP on non-router port " + str(obj))
@@ -438,7 +487,8 @@ class ChainReader(ChainBase, MidonetReader):
 
 class ChainWriter(ChainBase, MidonetWriter):
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         skip = _is_neutron_chain_name(obj['name'])
         if skip:
             self.add_skip(obj['id'], "Neutron generated chain")
@@ -503,28 +553,40 @@ class DhcpSubnetReader(DhcpSubnetBase, MidonetReader):
         subnet_list = []
         for subnet in objs:
             # Also add hosts
-            subnet_list.append(
-                {"subnet": _extract_fields(subnet.dto, self.fields),
-                 "hosts": _to_dto_dict(subnet.get_dhcp_hosts(),
-                                       fields=self._host_fields)})
+            s = _extract_fields(subnet.dto, self.fields)
+            s["hosts"] = _to_dto_dict(subnet.get_dhcp_hosts(),
+                                      fields=self._host_fields)
+            subnet_list.append(s)
         return subnet_list
 
 
-class DhcpSubnetWriter(DhcpSubnetBase, MidonetWriter):
+class DhcpSubnetWriter(DhcpSubnetBase, NoIdMixin, MidonetWriter):
+
+    @property
+    def _get_parent_resource_f(self):
+        return self.mc.mn_api.get_bridge
+
+    def _get_sub_resources(self, parent):
+        return parent.get_dhcp_subnets()
+
+    def _sub_resource_cmp_field(self, res):
+        return res.get_subnet_prefix()
+
+    @property
+    def _sub_resource_cmp_key(self):
+        return 'subnetPrefix'
 
     def create_child_f(self, obj, p_id, parents):
-        bridge = _get_obj(self.mc.mn_api.get_bridge, p_id,
-                          cache_map=parents)
-        s = obj['subnet']
+        bridge = _get_obj(self._get_parent_resource_f, p_id, cache_map=parents)
         return (bridge.add_dhcp_subnet()
-                .default_gateway(s['defaultGateway'])
-                .server_addr(s['serverAddr'])
-                .dns_server_addrs(s['dnsServerAddrs'])
-                .subnet_prefix(s['subnetPrefix'])
-                .subnet_length(s['subnetLength'])
-                .interface_mtu(s['interfaceMTU'])
-                .opt121_routes(s['opt121Routes'])
-                .enabled(s['enabled'])
+                .default_gateway(obj['defaultGateway'])
+                .server_addr(obj['serverAddr'])
+                .dns_server_addrs(obj['dnsServerAddrs'])
+                .subnet_prefix(obj['subnetPrefix'])
+                .subnet_length(obj['subnetLength'])
+                .interface_mtu(obj['interfaceMTU'])
+                .opt121_routes(obj['opt121Routes'])
+                .enabled(obj['enabled'])
                 .create)
 
     def process_child_sub_objects(self, obj, parent):
@@ -642,7 +704,8 @@ class HostInterfacePortReader(HostInterfaceBase, MidonetReader):
 
 class HostInterfacePortWriter(HostInterfaceBase, MidonetWriter):
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         pr_port_ids = self.provider_router_port_ids
         if obj['portId'] in pr_port_ids:
             LOG.debug("Skipping Provider Router port binding " + str(obj))
@@ -738,11 +801,24 @@ class IpAddrGroupAddrReader(IpAddrGroupAddrBase, MidonetReader):
         return _to_ipv4
 
 
-class IpAddrGroupAddrWriter(IpAddrGroupAddrBase, MidonetWriter):
+class IpAddrGroupAddrWriter(IpAddrGroupAddrBase, NoIdMixin, MidonetWriter):
+
+    @property
+    def _get_parent_resource_f(self):
+        return self.mc.mn_api.get_ip_addr_group
+
+    def _get_sub_resources(self, parent):
+        return parent.get_addrs()
+
+    def _sub_resource_cmp_field(self, res):
+        return res.get_addr()
+
+    @property
+    def _sub_resource_cmp_key(self):
+        return 'addr'
 
     def create_child_f(self, obj, p_id, parents):
-        iag = _get_obj(self.mc.mn_api.get_ip_addr_group, p_id,
-                       cache_map=parents)
+        iag = _get_obj(self._get_parent_resource_f, p_id, cache_map=parents)
         version = obj['version']
         if version == 4:
             return iag.add_ipv4_addr().addr(obj['addr']).create
@@ -848,7 +924,8 @@ class LoadBalancerWriter(LoadBalancerBase, MidonetWriter):
                 .admin_state_up(obj['adminStateUp'])
                 .create)
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         # Filter out LBs that are either not associated with a router created
         # by Neutron.
         if obj['routerId'] in self.n_router_ids:
@@ -1043,7 +1120,8 @@ class PortWriter(PortBase, MidonetWriter):
             raise ValueError("Unknown port type " + ptype +
                              " detected for port " + pid)
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         """We want to exclude the following ports:
 
         1. ID matching one of the neutron port IDs
@@ -1205,7 +1283,8 @@ class RouteWriter(RouteBase, MidonetWriter, dm_routes.RouteMixin,
         self._gw_ips = [p["fixed_ips"][0]["ip_address"] for p in ports.values()
                         if p["device_owner"] == const.ROUTER_GATEWAY_PORT_TYPE]
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
             self.add_skip(obj['id'], "Learned route")
@@ -1410,7 +1489,8 @@ class RuleWriter(RuleBase, MidonetWriter):
         chains = self._get_midonet_resources('chains')
         self.m_chain_ids = _midonet_only_chain_ids(chains)
 
-    def skip_create_object(self, obj, parent_id=None, n_ids=None):
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
         # Skip if the rule belongs to a chain generated by Neutron
         rule_id = obj['id']
         if parent_id not in self.m_chain_ids:

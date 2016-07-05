@@ -1,0 +1,1 @@
+{"midonet": {"ip_addr_groups": [{"id": "2114fa0b-536e-49d5-9532-f6f37f1eedca", "name": "default"}], "ip_addr_group_addrs": {"2114fa0b-536e-49d5-9532-f6f37f1eedca": [{"addr": "10.1.2.3", "version": 4}]}}}
