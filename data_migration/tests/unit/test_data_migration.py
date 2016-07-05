@@ -28,6 +28,7 @@ import testtools
 # mocks are setup.
 NEUTRON_DATA_MODULE = "data_migration.neutron_data"
 ANTISPOOF_MODULE = "data_migration.antispoof"
+ROUTES_MODULE = "data_migration.routes"
 
 
 def _get_ports(context=None, filters=None):
@@ -143,3 +144,23 @@ class TestAntiSpoof(BaseTestCase):
         self.assertEqual(1, len(test_obj.ip_as_rules))
         self.assertEqual(1, len(test_obj.mac_as_rules))
         self.assertEqual(1, len(test_obj.updated))
+
+
+class TestExtraRoutes(BaseTestCase):
+
+    def setUp(self):
+        super(TestExtraRoutes, self).setUp()
+        self.test_module = importutils.import_module(ROUTES_MODULE)
+
+    def test_extra_routes(self):
+        f = os.path.join(os.path.dirname(__file__), "extra_routes.json")
+
+        in_data = open(f).read()
+        test_obj = self.test_module.ExtraRoute(json.loads(in_data),
+                                               dry_run=False)
+        test_obj.migrate()
+        test_obj.print_summary()
+
+        self.assertEqual(1, len(test_obj.deleted))
+        self.assertEqual(1, len(test_obj.updated))
+        self.assertEqual(7, len(test_obj.skipped))

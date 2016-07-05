@@ -67,6 +67,7 @@ class DataCounterMixin(object):
     def __init__(self):
         self.skipped = []
         self.created = []
+        self.deleted = []
         self.updated = []
         self.conflicted = []
         super(DataCounterMixin, self).__init__()
@@ -81,6 +82,7 @@ class DataCounterMixin(object):
         print("\n")
         print("***** %s *****\n" % self.key)
         print("%d created" % len(self.created))
+        print("%d deleted" % len(self.deleted))
         print("%d updated" % len(self.updated))
         print("%d skipped due to conflict" % len(self.conflicted))
         print("%d skipped for other reasons" % len(self.skipped))
