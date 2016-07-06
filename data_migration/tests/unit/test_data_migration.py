@@ -26,6 +26,7 @@ import testtools
 # To avoid dealing with import statements in these modules that may attempt to
 # import what we want to mock too early, import them dynamically after all the
 # mocks are setup.
+MIDONET_DATA_MODULE = "data_migration.midonet_data"
 NEUTRON_DATA_MODULE = "data_migration.neutron_data"
 ANTISPOOF_MODULE = "data_migration.antispoof"
 ROUTES_MODULE = "data_migration.routes"
@@ -75,6 +76,11 @@ class BaseTestCase(testtools.TestCase):
         self.lb_plugin_mock.get_vips.return_value = ti.NEUTRON_VIPS
         self.lb_plugin_mock.get_health_monitors.return_value = (
             ti.NEUTRON_HEALTH_MONITORS)
+
+        write_context_mock = mock.MagicMock()
+        context_mock.get_write_context.return_value = write_context_mock
+        self.mn_api_mock = mock.MagicMock()
+        write_context_mock.mn_api = self.mn_api_mock
 
 
 class TestDataReader(BaseTestCase):
@@ -166,3 +172,101 @@ class TestExtraRoutes(BaseTestCase):
         self.assertEqual(1, len(test_obj.deleted))
         self.assertEqual(1, len(test_obj.updated))
         self.assertEqual(7, len(test_obj.skipped))
+
+
+class TestDhcpSubnets(BaseTestCase):
+
+    def setUp(self):
+        super(TestDhcpSubnets, self).setUp()
+        self.test_module = importutils.import_module(MIDONET_DATA_MODULE)
+
+    def test_dhcp_subnets(self):
+        bridge_mock = mock.MagicMock()
+        bridge_mock.get_dhcp_subnets.return_value = []
+        self.mn_api_mock.get_bridge.return_value = bridge_mock
+
+        create_map = {
+            "bridges": {
+                "49d50278-890b-4eae-9166-89831c8c217f": bridge_mock}}
+
+        f = os.path.join(os.path.dirname(__file__), "dhcp_subnets.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.DhcpSubnetWriter(json.loads(in_data),
+                                                     create_map,
+                                                     dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(2, len(test_obj.created))
+        self.assertEqual(0, len(test_obj.skipped))
+
+    def test_duplicate_dhcp_subnet(self):
+        bridge_mock = mock.MagicMock()
+        dhcp_subnet_mock = mock.MagicMock()
+        dhcp_subnet_mock.get_subnet_prefix.return_value = "10.0.0.0"
+        bridge_mock.get_dhcp_subnets.return_value = [dhcp_subnet_mock]
+        self.mn_api_mock.get_bridge.return_value = bridge_mock
+
+        create_map = {
+            "bridges": {
+                "49d50278-890b-4eae-9166-89831c8c217f": bridge_mock}}
+
+        f = os.path.join(os.path.dirname(__file__), "dhcp_subnets.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.DhcpSubnetWriter(json.loads(in_data),
+                                                     create_map,
+                                                     dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.created))
+        self.assertEqual(1, len(test_obj.skipped))
+
+
+class TestIpAddrGroupAddrs(BaseTestCase):
+
+    def setUp(self):
+        super(TestIpAddrGroupAddrs, self).setUp()
+        self.test_module = importutils.import_module(MIDONET_DATA_MODULE)
+
+    def test_ip_addr_group_addrs(self):
+        ip_addr_group_mock = mock.MagicMock()
+        ip_addr_group_mock.get_addrs.return_value = []
+        self.mn_api_mock.get_ip_addr_group.return_value = ip_addr_group_mock
+
+        create_map = {
+            "ip_addr_groups": {
+                "2114fa0b-536e-49d5-9532-f6f37f1eedca": ip_addr_group_mock}}
+
+        f = os.path.join(os.path.dirname(__file__), "ip_addr_group_addrs.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.IpAddrGroupAddrWriter(json.loads(in_data),
+                                                          create_map,
+                                                          dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(1, len(test_obj.created))
+        self.assertEqual(0, len(test_obj.skipped))
+
+    def test_duplicate_ip_addr_group_addr(self):
+        ip_addr_group_mock = mock.MagicMock()
+        ip_addr_group_addr_mock = mock.MagicMock()
+        ip_addr_group_addr_mock.get_addr.return_value = "10.1.2.3"
+        ip_addr_group_mock.get_addrs.return_value = [ip_addr_group_addr_mock]
+        self.mn_api_mock.get_ip_addr_group.return_value = ip_addr_group_mock
+
+        create_map = {
+            "ip_addr_groups": {
+                "2114fa0b-536e-49d5-9532-f6f37f1eedca": ip_addr_group_mock}}
+
+        f = os.path.join(os.path.dirname(__file__), "ip_addr_group_addrs.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.IpAddrGroupAddrWriter(json.loads(in_data),
+                                                          create_map,
+                                                          dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.created))
+        self.assertEqual(1, len(test_obj.skipped))
