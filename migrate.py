@@ -52,7 +52,7 @@ def main():
                              '\textraroutes: convert midonet routes to Neutron'
                              'extra routes\n'
                              '\tantispoof: convert disabled antispoof rules to'
-                             'allowed address pairs')
+                             ' allowed address pairs')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
