@@ -281,6 +281,10 @@ class NoIdMixin(object):
 
     def skip_create_object(self, obj, parent_id=None, n_ids=None,
                            parents=None):
+        if self.dry_run:
+            # Cannot run this in dry run
+            return False
+
         parent = _get_obj(self._get_parent_resource_f, parent_id,
                           cache_map=parents)
         children = self.no_id_res_map.get(parent_id)
