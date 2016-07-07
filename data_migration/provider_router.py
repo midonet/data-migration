@@ -69,8 +69,8 @@ class ProviderRouterMixin(object):
         return self.provider_router_ports.keys()
 
 
-class ProviderRouter(dm_data.CommonData, ProviderRouterMixin,
-                     er.ExtraRoutesMixin):
+class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
+                     ProviderRouterMixin, er.ExtraRoutesMixin):
 
     def provider_router_to_edge_router(self, tenant):
         if self._edge_router_exists():
