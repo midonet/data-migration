@@ -450,7 +450,7 @@ class BridgeReader(BridgeBase, MidonetReader):
 
     def get_resources(self, parent=None):
         LOG.info("Getting Bridge objects")
-        return self.mc.mn_api.get_bridges()
+        return self.mc.mn_api.get_bridges(query={})
 
 
 class BridgeWriter(BridgeBase, MidonetWriter):
@@ -486,7 +486,7 @@ class ChainReader(ChainBase, MidonetReader):
 
     def get_resources(self, parent=None):
         LOG.info("Getting Chain objects")
-        return self.mc.mn_api.get_chains()
+        return self.mc.mn_api.get_chains(query={})
 
 
 class ChainWriter(ChainBase, MidonetWriter):
@@ -1169,7 +1169,7 @@ class PortGroupReader(PortGroupBase, MidonetReader):
 
     def get_resources(self, parent=None):
         LOG.info("Getting Port Group objects")
-        return self.mc.mn_api.get_port_groups()
+        return self.mc.mn_api.get_port_groups(query={})
 
 
 class PortGroupWriter(PortGroupBase, MidonetWriter):
@@ -1386,7 +1386,7 @@ class RouterReader(RouterBase, MidonetReader):
 
     def get_resources(self, parent=None):
         LOG.info("Getting Router objects")
-        return self.mc.mn_api.get_routers()
+        return self.mc.mn_api.get_routers(query={})
 
 
 class RouterWriter(RouterBase, MidonetWriter):
