@@ -43,6 +43,9 @@ Commands::
          Migrate both Neutron generated and MidoNet generated data to the
          midonet cluster.  The input to this command is the JSON output from
          the 'prepare' command.
+     clean
+         Clean up Zookeeper data created for v5.X.  mn-conf data is not
+         touched.
      pr2er
          Convert provider router to edge router and uplink networks.
          -t (--tenant) must be set for this command.  The input to this command

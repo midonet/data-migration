@@ -1,5 +1,5 @@
 [database]
-# Database conneciton string
+# Database connection string
 #
 # Uncomment to use pymysql
 # connection = mysql+pymysql://root:midonet@127.0.0.1/neutron?charset=utf8
@@ -15,3 +15,6 @@
 # password = midonet
 # username = neutron
 # midonet_uri = http://127.0.0.1:8181/midonet-api
+
+[zookeeper]
+# servers = 127.0.0.1:2181

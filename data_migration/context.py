@@ -91,6 +91,7 @@ class MigrationWriteContext(MigrationContext):
         # This is required to bypass the issue when loading service plugins in
         # Liberty onward.
         cfg.CONF.set_override('core_plugin', cnst.V2_PLUGIN)
+        self.zk_servers = cfg.CONF.zookeeper.servers
 
 
 def get_read_context():
@@ -105,3 +106,11 @@ def get_write_context():
     if _migration_write_context is None:
         _migration_write_context = MigrationWriteContext()
     return _migration_write_context
+
+
+zk_opts = [
+    cfg.StrOpt('servers', default='127.0.0.1:2181',
+               help="Zookeeper servers")
+]
+
+cfg.CONF.register_opts(zk_opts, "zookeeper")

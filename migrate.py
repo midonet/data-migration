@@ -21,6 +21,7 @@ from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
 from data_migration import provider_router as pr
 from data_migration import routes as er
+from data_migration import zk_util
 import json
 import logging
 from oslo_config import cfg
@@ -45,6 +46,7 @@ def main():
                         help="Command to run:\n\n"
                              '\tprepare: prepare intermediary data in JSON\n'
                              '\tmigrate: migrate data from JSON input\n'
+                             '\tclean: delete v5.X ZK data\n'
                              '\tpr2er: convert provider router to edge router'
                              '\n'
                              '\tdeler: delete edge router and uplink networks'
@@ -88,6 +90,8 @@ def main():
 
         nd.migrate(json_source, dry_run=dry_run)
         md.migrate(json_source, dry_run=dry_run)
+    elif args.command == "clean":
+        zk_util.delete(dry_run=dry_run)
     elif args.command == "pr2er":
         if not args.tenant:
             _exit_on_error("tenant is required for this command", parser)
