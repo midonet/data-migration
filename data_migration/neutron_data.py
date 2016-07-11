@@ -301,11 +301,10 @@ class PoolWriter(PoolBase, NeutronWriter):
 
         # Data corruption may cause subnet to not exist here.  There is no
         # foreign key constraint enforced.
-        subnet = self.subnet_gw_map.get(subnet_id)
-        router_id = subnet['gw_router_id'] if subnet else None
+        router_id = self.subnet_gw_map.get(subnet_id)
 
         # Stale data may not have router ID associated.  Skip such data.
-        if router_id is None:
+        if not router_id:
             LOG.debug("Skipping pool because of no router association: " +
                       str(data))
             self.add_skip(data['id'], "Pool has no router association")
@@ -318,7 +317,7 @@ class PoolWriter(PoolBase, NeutronWriter):
         pool['vip_id'] = None
         pool['router_id'] = router_id
 
-        self.try_create_obj(self.mc.client.create_pool, self.mc.n_ctx, data)
+        self.try_create_obj(self.mc.client.create_pool, self.mc.n_ctx, pool)
 
 
 class MemberBase(object):
