@@ -83,14 +83,24 @@ class MigrationWriteContext(MigrationContext):
 
     def __init__(self):
         # Only v2 plugin should be loaded
-        self.plugin = _import_plugin(cnst.V2_PLUGIN)
-        self.l3_plugin = importutils.import_object(cnst.L3_PLUGIN)
-        super(MigrationWriteContext, self).__init__()
-        self.client = importutils.import_object(self.config.client,
-                                                self.config)
-        # This is required to bypass the issue when loading service plugins in
-        # Liberty onward.
         cfg.CONF.set_override('core_plugin', cnst.V2_PLUGIN)
+        self.plugin = _import_plugin(cnst.V2_PLUGIN)
+
+        try:
+            # L3 plugin is liberty onward
+            self.l3_plugin = importutils.import_object(cnst.L3_PLUGIN)
+        except ImportError:
+            self.l3_plugin = self.plugin
+
+        super(MigrationWriteContext, self).__init__()
+
+        try:
+            # Liberty onward accepts config
+            self.client = importutils.import_object(self.config.client,
+                                                    self.config)
+        except TypeError:
+            self.client = importutils.import_object(self.config.client)
+
         self.zk_servers = cfg.CONF.zookeeper.servers
 
 
