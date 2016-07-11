@@ -174,6 +174,54 @@ class TestExtraRoutes(BaseTestCase):
         self.assertEqual(7, len(test_obj.skipped))
 
 
+class TestMidonetNeutronMismatch(BaseTestCase):
+
+    def setUp(self):
+        super(TestMidonetNeutronMismatch, self).setUp()
+        self.test_module = importutils.import_module(MIDONET_DATA_MODULE)
+
+    def test_router_with_no_neutron(self):
+        f = os.path.join(os.path.dirname(__file__), "non_existent_chain.json")
+        in_data = open(f).read()
+
+        test_obj = self.test_module.RouterWriter(json.loads(in_data),
+                                                 {"chains": {}},
+                                                 dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.created))
+        self.assertEqual(1, len(test_obj.skipped))
+
+    def test_bridge_with_no_neutron(self):
+        f = os.path.join(os.path.dirname(__file__), "non_existent_chain.json")
+        in_data = open(f).read()
+
+        test_obj = self.test_module.BridgeWriter(json.loads(in_data),
+                                                 {"chains": {}},
+                                                 dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.created))
+        self.assertEqual(1, len(test_obj.skipped))
+
+    def test_port_with_no_neutron(self):
+        f = os.path.join(os.path.dirname(__file__), "non_existent_chain.json")
+        in_data = open(f).read()
+
+        test_obj = self.test_module.PortWriter(json.loads(in_data),
+                                               {"chains": {},
+                                                "bridges": {},
+                                                "routers": {}},
+                                               dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.created))
+        self.assertEqual(1, len(test_obj.skipped))
+
+
 class TestDhcpSubnets(BaseTestCase):
 
     def setUp(self):

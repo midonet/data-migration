@@ -303,6 +303,40 @@ class NoIdMixin(object):
         return False
 
 
+class ChainCheckerMixin(object):
+
+    def __init__(self, data, created_map, dry_run=False):
+        super(ChainCheckerMixin, self).__init__(data, created_map,
+                                                dry_run=dry_run)
+        self.created_chain_ids = set(self.created_map[const.MN_CHAINS].keys())
+
+    def _skip_if_no_chain(self, obj):
+        in_filter_id = obj['inboundFilterId']
+        out_filter_id = obj['outboundFilterId']
+        if in_filter_id and in_filter_id not in self.created_chain_ids:
+            LOG.debug("Skipping " + obj['id'] + " because its inboundFilterId "
+                      "was never created")
+            self.add_skip(obj['id'], "inboundFilterId does not exist")
+            return True
+
+        if out_filter_id and out_filter_id not in self.created_chain_ids:
+            LOG.debug("Skipping " + obj['id'] + " because its outboundFilterId"
+                      " was never created")
+            self.add_skip(obj['id'], "outboundFilterId does not exist")
+            return True
+
+        return False
+
+    def skip_create_object(self, obj, parent_id=None, n_ids=None,
+                           parents=None):
+        skip = super(ChainCheckerMixin, self).skip_create_object(
+            obj, parent_id=parent_id, n_ids=n_ids, parents=parents)
+        if skip:
+            return True
+
+        return self._skip_if_no_chain(obj)
+
+
 class AdRouteBase(object):
     """Expected format:
 
@@ -453,7 +487,7 @@ class BridgeReader(BridgeBase, MidonetReader):
         return self.mc.mn_api.get_bridges(query={})
 
 
-class BridgeWriter(BridgeBase, MidonetWriter):
+class BridgeWriter(BridgeBase, ChainCheckerMixin, MidonetWriter):
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_bridge()
@@ -1087,7 +1121,7 @@ class PortReader(PortBase, MidonetReader):
         return parent.get_ports()
 
 
-class PortWriter(PortBase, MidonetWriter):
+class PortWriter(PortBase, ChainCheckerMixin, MidonetWriter):
 
     def create_child_f(self, obj, p_id, parents):
         pid = obj['id']
@@ -1145,7 +1179,7 @@ class PortWriter(PortBase, MidonetWriter):
             self.add_skip(port_id, "Unknown port type " + port_type)
             return True
 
-        return False
+        return super(PortWriter, self)._skip_if_no_chain(obj)
 
 
 class PortGroupBase(object):
@@ -1389,7 +1423,7 @@ class RouterReader(RouterBase, MidonetReader):
         return self.mc.mn_api.get_routers(query={})
 
 
-class RouterWriter(RouterBase, MidonetWriter):
+class RouterWriter(RouterBase, ChainCheckerMixin, MidonetWriter):
 
     def create_f(self, obj):
         return (self.mc.mn_api.add_router()
@@ -1407,8 +1441,7 @@ class RuleBase(object):
     """"Expected format:
 
     "rules": {UUID (Chain ID):
-           [{"id": UUID,
-             "jumpChainName": String,
+           [{"id": UUID,s
              "jumpChainId": UUID,
              "natTargets": [{"addressFrom": String,
                              "addressTo": String,
