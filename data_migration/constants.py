@@ -70,4 +70,4 @@ MN_TUNNEL_ZONES = "tunnel_zones"
 MN_TZ_HOSTS = "tunnel_zone_hosts"
 MN_VIPS = "vips"
 
-ZOOM_ZK_ROOT = "/midonet/zoom"
+ZOOM_ZK_ROOTS = ["/midonet/zoom", "/midonet/bridges"]

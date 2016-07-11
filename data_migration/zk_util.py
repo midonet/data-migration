@@ -33,9 +33,10 @@ def _recursive_delete(handle, root, dry_run=False):
 
 def delete(dry_run=False):
     wc = ctx.get_write_context()
-    LOG.info("Deleting recursively " + cnt.ZOOM_ZK_ROOT + " from server(s) " +
-             wc.zk_servers)
+    LOG.info("Deleting recursively " + str(cnt.ZOOM_ZK_ROOTS) +
+             " from server(s) " + wc.zk_servers)
 
     handle = zookeeper.init(wc.zk_servers)
-    if zookeeper.exists(handle, cnt.ZOOM_ZK_ROOT):
-        _recursive_delete(handle, cnt.ZOOM_ZK_ROOT, dry_run=dry_run)
+    for root in cnt.ZOOM_ZK_ROOTS:
+        if zookeeper.exists(handle, root):
+            _recursive_delete(handle, root, dry_run=dry_run)
