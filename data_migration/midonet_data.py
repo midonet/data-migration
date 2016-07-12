@@ -139,11 +139,39 @@ class MidonetReader(object):
 class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
                     pr.ProviderRouterMixin):
 
-    def __init__(self, data, created_map, dry_run=False):
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
         super(MidonetWriter, self).__init__(data, dry_run=dry_run)
         self.created_map = created_map
         self.created_map[self.key] = {}
         self._created_map = {}
+
+        # Keep track of resources skipped because of reason other than Neutron
+        # generated
+        self._skipped_mn_res_map = mn_skipped_map
+
+    def _skipped_mn_set(self, key):
+        s = self._skipped_mn_res_map.get(key)
+        if s is None:
+            s = set()
+            self._skipped_mn_res_map[key] = s
+        return s
+
+    def _mark_mn_resource_skipped(self, key, res_id):
+        s = self._skipped_mn_set(key)
+        s.add(res_id)
+
+    def _mn_resource_skipped(self, key, res_id):
+        s = self._skipped_mn_set(key)
+        return res_id in s
+
+    def skip_if_mn_resource_skipped(self, obj_id, res_id, key):
+        if res_id and self._mn_resource_skipped(key, res_id):
+            LOG.debug("Skipping " + obj_id + " because its " + res_id +
+                      " was also skipped")
+            self.add_skip(obj_id, res_id + " was skipped earlier")
+            self._mark_mn_resource_skipped(self.key, obj_id)
+            return True
+        return False
 
     def _created_set(self, key):
         s = self._created_map.get(key)
@@ -160,8 +188,9 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
         res_id = obj[field_key]
         if res_id and not self._resource_created(key, res_id):
             LOG.debug("Skipping " + obj['id'] + " because its " + field_key +
-                      "was never created")
+                      " was never created")
             self.add_skip(obj['id'], field_key + " does not exist")
+            self._mark_mn_resource_skipped(self.key, obj['id'])
             return True
         return False
 
@@ -275,15 +304,22 @@ class MidonetWriter(dm_data.CommonData, dm_data.DataCounterMixin,
             is_neutron_generated = obj['id'] in n_ids
             if is_neutron_generated:
                 self.add_skip(obj['id'], "Neutron generated object")
-            return is_neutron_generated
-        else:
-            return False
+                return True
+
+        if parent_id and 'id' in obj:
+            for p_key in self.parent_keys:
+                if self.skip_if_mn_resource_skipped(obj['id'], parent_id,
+                                                    p_key):
+                    return True
+
+        return False
 
 
 class NoIdMixin(object):
 
-    def __init__(self, data, created_map, dry_run=False):
-        super(NoIdMixin, self).__init__(data, created_map, dry_run=dry_run)
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
+        super(NoIdMixin, self).__init__(data, created_map, mn_skipped_map,
+                                        dry_run=dry_run)
         self.no_id_res_map = {}
 
     @property
@@ -410,8 +446,9 @@ class BgpReader(BgpBase, MidonetReader):
 
 class BgpWriter(BgpBase, MidonetWriter):
 
-    def __init__(self, data, created_map, dry_run=None):
-        super(BgpWriter, self).__init__(data, created_map, dry_run=dry_run)
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=None):
+        super(BgpWriter, self).__init__(data, created_map, mn_skipped_map,
+                                        dry_run=dry_run)
         self.port_map = self._get_midonet_resource_map('ports')
 
     @property
@@ -754,6 +791,9 @@ class HostInterfacePortWriter(HostInterfaceBase, MidonetWriter):
             self.add_skip(obj['portId'], "Health monitor port binding")
             return True
 
+        if self._mn_resource_skipped(const.MN_PORTS, obj['portId']):
+            return True
+
         return False
 
     def create_child_f(self, obj, p_id, parents):
@@ -892,8 +932,9 @@ class LinkReader(LinkBase, MidonetReader):
 
 class LinkWriter(LinkBase, MidonetWriter):
 
-    def __init__(self, data, created_map, dry_run=False):
-        super(LinkWriter, self).__init__(data, created_map, dry_run=dry_run)
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
+        super(LinkWriter, self).__init__(data, created_map, mn_skipped_map,
+                                         dry_run=dry_run)
         self._n_port_ids = self._neutron_ids(const.NEUTRON_PORTS)
 
     def create(self):
@@ -912,6 +953,14 @@ class LinkWriter(LinkBase, MidonetWriter):
             if port_id in self._n_port_ids or peer_id in self._n_port_ids:
                 LOG.debug("Skipping Neutron port linking " + str(link))
                 self.add_skip(link, "Neutron port linking")
+                continue
+
+            # Skip if the port was skipped earlier
+            if (self._mn_resource_skipped(const.MN_PORTS, port_id) or
+                    self._mn_resource_skipped(const.MN_PORTS, peer_id)):
+                LOG.debug("Skipping " + str(link) + " because the port(s) "
+                          "were also skipped")
+                self.add_skip(link, "Port(s) was skipped earlier")
                 continue
 
             LOG.debug("Linking ports " + str(link))
@@ -950,8 +999,9 @@ class LoadBalancerReader(LoadBalancerBase, MidonetReader):
 
 class LoadBalancerWriter(LoadBalancerBase, MidonetWriter):
 
-    def __init__(self, data, created_map, dry_run=False):
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
         super(LoadBalancerWriter, self).__init__(data, created_map,
+                                                 mn_skipped_map,
                                                  dry_run=dry_run)
         self.n_router_ids = self._neutron_ids('routers')
 
@@ -1178,6 +1228,13 @@ class PortWriter(PortBase, MidonetWriter):
             self.add_skip(port_id, "Unknown port type " + port_type)
             return True
 
+        # Skip if its parent resource was also skipped earlier
+        if (self.skip_if_mn_resource_skipped(obj['id'], obj['deviceId'],
+                                             const.MN_BRIDGES) or
+            self.skip_if_mn_resource_skipped(obj['id'], obj['deviceId'],
+                                             const.MN_ROUTERS)):
+            return True
+
         return (self.skip_if_not_exist(obj, 'inboundFilterId',
                                        const.MN_CHAINS) or
                 self.skip_if_not_exist(obj, 'outboundFilterId',
@@ -1303,8 +1360,9 @@ class RouteReader(RouteBase, MidonetReader):
 class RouteWriter(RouteBase, MidonetWriter, dm_routes.RouteMixin,
                   pr.ProviderRouterMixin):
 
-    def __init__(self, data, created_map, dry_run=False):
-        super(RouteWriter, self).__init__(data, created_map, dry_run=dry_run)
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
+        super(RouteWriter, self).__init__(data, created_map, mn_skipped_map,
+                                          dry_run=dry_run)
         links = self._get_midonet_resources(key="port_links")
         n_port_ids = self._neutron_ids('ports')
         self.n_port_and_peer_ids = set()
@@ -1328,6 +1386,11 @@ class RouteWriter(RouteBase, MidonetWriter, dm_routes.RouteMixin,
         if obj['learned']:
             LOG.debug("Skipping learned route " + str(obj))
             self.add_skip(obj['id'], "Learned route")
+            return True
+
+        # Skip if the parent router was skipped earlier
+        if self.skip_if_mn_resource_skipped(obj['id'], parent_id,
+                                            const.MN_ROUTERS):
             return True
 
         # Skip the port routes
@@ -1535,8 +1598,9 @@ class RuleReader(RuleBase, MidonetReader):
 
 class RuleWriter(RuleBase, MidonetWriter):
 
-    def __init__(self, data, created_map, dry_run=False):
-        super(RuleWriter, self).__init__(data, created_map, dry_run=dry_run)
+    def __init__(self, data, created_map, mn_skipped_map, dry_run=False):
+        super(RuleWriter, self).__init__(data, created_map,
+                                         mn_skipped_map, dry_run=dry_run)
         chains = self._get_midonet_resources('chains')
         self.m_chain_ids = _midonet_only_chain_ids(chains)
 
@@ -1760,7 +1824,8 @@ def prepare(neutron_data):
 def migrate(data, dry_run=False):
     LOG.info('Running MidoNet migration process')
     created_map = {}
+    mn_skipped_map = {}
     for _, clz in _MIDONET_OBJECTS:
-        obj = clz(data, created_map, dry_run=dry_run)
+        obj = clz(data, created_map, mn_skipped_map, dry_run=dry_run)
         obj.create()
         obj.print_summary()

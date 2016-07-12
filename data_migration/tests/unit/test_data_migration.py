@@ -185,41 +185,46 @@ class TestMidonetNeutronMismatch(BaseTestCase):
         in_data = open(f).read()
 
         test_obj = self.test_module.RouterWriter(json.loads(in_data),
-                                                 {"chains": {}},
+                                                 {"chains": {}}, {},
                                                  dry_run=False)
         test_obj.create()
         test_obj.print_summary()
 
         self.assertEqual(0, len(test_obj.created))
         self.assertEqual(1, len(test_obj.skipped))
+        self.assertEqual(1, len(test_obj._skipped_mn_res_map))
 
     def test_bridge_with_no_neutron(self):
         f = os.path.join(os.path.dirname(__file__), "non_existent_chain.json")
         in_data = open(f).read()
 
         test_obj = self.test_module.BridgeWriter(json.loads(in_data),
-                                                 {"chains": {}},
+                                                 {"chains": {}}, {},
                                                  dry_run=False)
         test_obj.create()
         test_obj.print_summary()
 
         self.assertEqual(0, len(test_obj.created))
         self.assertEqual(1, len(test_obj.skipped))
+        self.assertEqual(1, len(test_obj._skipped_mn_res_map))
 
-    def test_port_with_no_neutron(self):
+    def test_port_parent_skipped(self):
         f = os.path.join(os.path.dirname(__file__), "non_existent_chain.json")
         in_data = open(f).read()
 
+        created_map = {"chains": {}, "bridges": {}, "routers": {}}
+        mn_skipped_map = {"bridges": {"49d50278-890b-4eae-9166-89831c8c217f"}}
+
         test_obj = self.test_module.PortWriter(json.loads(in_data),
-                                               {"chains": {},
-                                                "bridges": {},
-                                                "routers": {}},
+                                               created_map,
+                                               mn_skipped_map,
                                                dry_run=False)
         test_obj.create()
         test_obj.print_summary()
 
         self.assertEqual(0, len(test_obj.created))
         self.assertEqual(1, len(test_obj.skipped))
+        self.assertEqual(1, len(test_obj._skipped_mn_res_map["ports"]))
 
 
 class TestDhcpSubnets(BaseTestCase):
@@ -240,7 +245,7 @@ class TestDhcpSubnets(BaseTestCase):
         f = os.path.join(os.path.dirname(__file__), "dhcp_subnets.json")
         in_data = open(f).read()
         test_obj = self.test_module.DhcpSubnetWriter(json.loads(in_data),
-                                                     create_map,
+                                                     create_map, {},
                                                      dry_run=False)
         test_obj.create()
         test_obj.print_summary()
@@ -262,7 +267,7 @@ class TestDhcpSubnets(BaseTestCase):
         f = os.path.join(os.path.dirname(__file__), "dhcp_subnets.json")
         in_data = open(f).read()
         test_obj = self.test_module.DhcpSubnetWriter(json.loads(in_data),
-                                                     create_map,
+                                                     create_map, {},
                                                      dry_run=False)
         test_obj.create()
         test_obj.print_summary()
@@ -289,7 +294,7 @@ class TestIpAddrGroupAddrs(BaseTestCase):
         f = os.path.join(os.path.dirname(__file__), "ip_addr_group_addrs.json")
         in_data = open(f).read()
         test_obj = self.test_module.IpAddrGroupAddrWriter(json.loads(in_data),
-                                                          create_map,
+                                                          create_map, {},
                                                           dry_run=False)
         test_obj.create()
         test_obj.print_summary()
@@ -311,7 +316,7 @@ class TestIpAddrGroupAddrs(BaseTestCase):
         f = os.path.join(os.path.dirname(__file__), "ip_addr_group_addrs.json")
         in_data = open(f).read()
         test_obj = self.test_module.IpAddrGroupAddrWriter(json.loads(in_data),
-                                                          create_map,
+                                                          create_map, {},
                                                           dry_run=False)
         test_obj.create()
         test_obj.print_summary()
