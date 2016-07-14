@@ -111,11 +111,14 @@ class ExtraRoutesMixin(RouteMixin):
         return True
 
     def _get_extra_route_map(self, router_id, cidrs, ips):
-        extra_routes = {}
-
         # Get all the "normal" routes, store and delete them
         m_route_map = self._get_midonet_resources("routes")
-        m_routes = m_route_map[router_id]
+        m_routes = m_route_map.get(router_id)
+        if not m_routes:
+            # It's possible that MN data was missing
+            return {}
+
+        extra_routes = {}
         for m_r in m_routes:
             if self._is_extra_route_convertible(m_r, cidrs, ips):
                 er = _make_extra_route(m_r)
