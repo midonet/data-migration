@@ -58,3 +58,10 @@ Commands::
      antispoof
          Convert MidoNet diable anti-spoof rules into Neutron allowed address
          pairs.
+     extnet
+         Create external network called 'MidoNet External Network' and a
+         subnet with 169.254.0.0/16 CIDR. -t (--tenant) must be
+         set for this command.
+     delextnet
+         Delete external network named 'MidoNet External Network', assumed to
+         have been created from extnet command.

@@ -38,6 +38,7 @@ class ProviderRouterMixin(object):
     def __init__(self):
         self._provider_routers = {}
         self._pr_port_map = {}
+        self._pr_peer_port_map = {}
         super(ProviderRouterMixin, self).__init__()
 
     @property
@@ -75,62 +76,106 @@ class ProviderRouterMixin(object):
                 if name in self.provider_routers_ports
                 else [])
 
+    @property
+    def provider_router_peer_port_map(self):
+        if not self._pr_peer_port_map:
+            port_map = self._get_midonet_resource_map(const.MN_PORTS)
+            for rtr, pr_port_map in self.provider_routers_ports.items():
+                # Skip any provider router not getting mapped to an
+                # external network
+                if rtr not in const.PROVIDER_ROUTER_TO_EXT_NET_MAP:
+                    continue
+                edge_name = const.PROVIDER_ROUTER_TO_EXT_NET_MAP[rtr][0]
+                for port in filter(
+                        lambda p: p.get('peerId') is not None,
+                        pr_port_map.values()):
+                    peer = port_map[port.get('peerId')]
+                    if peer['type'] == const.RTR_PORT_TYPE:
+                        self._pr_peer_port_map[peer['deviceId']] = edge_name
+        return self._pr_peer_port_map
+
 
 class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
                      ProviderRouterMixin, er.ExtraRoutesMixin):
 
     def provider_routers_to_edge_routers(self, tenant):
-        for pr in const.PROVIDER_ROUTER_NAMES:
-            if self._router_exists(pr):
-                LOG.info("Edge router(s) already exists.  "
-                         "Delete before running this command. " +
-                         str())
-                return
+        if self._edge_routers_exist():
+            LOG.info("Edge routers already exist.  Delete before running "
+                     "this command. " + str())
+            return
 
-            edge_router = self._create_edge_router(tenant, pr)
+        for pr, ex_net in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.items():
+            ext_subnet_name = ex_net[0] + '_sub'
+            ext_subnet = self.mc.plugin.get_subnets(
+                self.mc.n_ctx, filters={"name": [ext_subnet_name]})
+            if len(ext_subnet) != 1:
+                LOG.debug("Only one external subnet should have been found for"
+                          " external net: " + ex_net[0] + ", but we found " +
+                          str(len(ext_subnet)) + ", skipping.")
+                continue
+
+            er_name = ex_net[0] + '_edge_router'
+            edge_router = self._create_edge_router(tenant, er_name)
+
             for port in self.provider_routers_ports[pr].values():
-
-                if not (port['hostId'] and port['interfaceName']):
+                if not (port.get('hostId') and
+                    port.get('interfaceName')):
                     LOG.debug("Skipping unbound port: " + port['id'])
                     continue
 
-                self._create_uplink_network(port, edge_router, tenant)
+                # We need to create new binding ports on the new router as well
+                # as transfer over any BGP/route data
+                self._create_midonet_uplink_port(edge_router['id'], port)
 
-            self._link_external_subnets(edge_router)
+            self._link_external_subnets(edge_router, ext_subnet[0])
 
             # Migrate BGP
-            self._migrate_bgp(edge_router)
+            self._migrate_bgp(self.provider_routers[pr],
+                              edge_router)
 
             # Migrate extra routes
             self.routes_to_extra_routes(self.provider_routers[pr]['id'],
-                                        dest_router=edge_router, delete=False)
+                                        dest_router=edge_router,
+                                        delete=False)
 
-    def _router_exists(self, name):
+    def _edge_routers_exist(self):
         # Find the edge router
+        names = map(lambda s: s + '_edge_router',
+                    [p[0]
+                     for p in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values()])
         routers = self.mc.l3_plugin.get_routers(
-            self.mc.n_ctx, filters={"name": [name]})
+            self.mc.n_ctx, filters={"name": names})
         return len(routers) > 0
 
-    def _link_external_subnets(self, edge_router):
-        edge_router_id = edge_router['id'] if edge_router else None
-        nets = self._get_neutron_resources('networks')
-        subnet_ids = _get_external_subnet_ids(nets)
-        for subnet in subnet_ids:
-            iface_obj = {'subnet_id': subnet}
-            LOG.debug("Create Edge Router Intf: " + str(iface_obj))
-            self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
-                                      edge_router_id, iface_obj)
+    def _link_external_subnets(self, edge_router, ext_subnet):
+        iface_obj = {'subnet_id': ext_subnet['id']}
+        LOG.debug("Create Edge Router Port on Ext Network: " + str(iface_obj))
+        self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
+                                  edge_router['id'], iface_obj)
 
     def _create_edge_router(self, tenant, name):
         router_obj = {
             'router': {
                 'name': name,
                 'tenant_id': tenant,
-                'admin_state_up':
-                    self.provider_routers[name]['adminStateUp']}}
+                'admin_state_up': True}}
         LOG.debug("Create Edge Router: " + str(router_obj))
         return self._create_neutron_data(self.mc.l3_plugin.create_router,
                                          router_obj)
+
+    def _create_midonet_uplink_port(self, dest_router, old_port):
+        host = self.mc.mn_api.get_host(old_port.get('hostId'))
+        iface = old_port.get('interfaceName')
+
+        mn_router = self.mc.mn_api.get_router(dest_router)
+        rtr_port = (self.mc.mn_api.add_router_port(mn_router)
+                    .admin_state_up(True)
+                    .port_address(old_port['portAddress'])
+                    .network_address(old_port['networkAddress'])
+                    .network_length(old_port['networkLength'])
+                    .port_mac(old_port['portMac'])
+                    .create())
+        self.mc.mn_api.add_host_interface_port(host, rtr_port.get_id(), iface)
 
     def _get_host_name_from_host_id(self, host_id):
         hosts = self._get_midonet_resources("hosts")
@@ -194,12 +239,14 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
         upl_port = self._create_uplink_port(port, upl_net, upl_sub, tenant)
         self._link_edge_router_to_uplink(upl_port, edge_router)
 
-    def _migrate_bgp(self, edge_router):
+    def _migrate_bgp(self, source_router, edge_router):
         bgp_objs = self._get_midonet_resources(const.MN_BGP)
         pr_bgp_objs = []
-        for port_id, bgp_list in iter(bgp_objs.items()):
-            if port_id in self.provider_router_port_ids(edge_router['name']):
-                pr_bgp_objs.extend(bgp_list)
+
+        for port_id in self.provider_router_port_ids(source_router['name']):
+            bgp_list = bgp_objs.get(port_id)
+            pr_bgp_objs.extend(bgp_list if bgp_list else [])
+
         LOG.debug("Create edge router BGP peers from BGP: " + str(pr_bgp_objs))
 
         pr_bgp_ids = [bgp['id'] for bgp in pr_bgp_objs]
@@ -262,7 +309,10 @@ def delete_edge_routers():
             mc.plugin.delete_network(mc.n_ctx, net["id"])
 
     routers = mc.l3_plugin.get_routers(
-        mc.n_ctx, filters={"name": [r for r in const.PROVIDER_ROUTER_NAMES]})
+        mc.n_ctx, filters={
+            "name": map(lambda s: s[0] + '_edge_router',
+                        const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values())})
+
     for router in routers:
         er_id = router["id"]
 

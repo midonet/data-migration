@@ -17,6 +17,7 @@
 from __future__ import print_function
 import argparse
 from data_migration import antispoof as asp
+from data_migration import external_net as en
 from data_migration import midonet_data as md
 from data_migration import neutron_data as nd
 from data_migration import provider_router as pr
@@ -34,6 +35,12 @@ def _exit_on_error(msg, parser):
     print(msg, file=sys.stderr)
     parser.print_help()
     sys.exit(-1)
+
+
+def _load_json_from_stdin():
+    source = sys.stdin.readline()
+    sys.stdin = open('/dev/tty')
+    return json.loads(source)
 
 
 def main():
@@ -54,7 +61,9 @@ def main():
                              '\textraroutes: convert midonet routes to Neutron'
                              'extra routes\n'
                              '\tantispoof: convert disabled antispoof rules to'
-                             ' allowed address pairs')
+                             ' allowed address pairs\n'
+                             '\textnet: create external network\n'
+                             '\tdelextnet: delete external network')
     parser.add_argument('-n', '--dryrun', action='store_true', default=False,
                         help='Perform a "dry run" and print out the examined\n'
                              'information and actions that would normally be\n'
@@ -85,9 +94,7 @@ def main():
         }
         print(json.dumps(output))
     elif args.command == "migrate":
-        source = sys.stdin.readline()
-        json_source = json.loads(source)
-
+        json_source = _load_json_from_stdin()
         nd.migrate(json_source, dry_run=dry_run)
         md.migrate(json_source, dry_run=dry_run)
     elif args.command == "clean":
@@ -95,20 +102,23 @@ def main():
     elif args.command == "pr2er":
         if not args.tenant:
             _exit_on_error("tenant is required for this command", parser)
-
-        source = sys.stdin.readline()
-        json_source = json.loads(source)
+        json_source = _load_json_from_stdin()
         pr.migrate(json_source, args.tenant, dry_run=dry_run)
     elif args.command == "deler":
         pr.delete_edge_routers()
     elif args.command == "extraroutes":
-        source = sys.stdin.readline()
-        json_source = json.loads(source)
+        json_source = _load_json_from_stdin()
         er.migrate(json_source, dry_run=dry_run)
     elif args.command == "antispoof":
-        source = sys.stdin.readline()
-        json_source = json.loads(source)
+        json_source = _load_json_from_stdin()
         asp.migrate(json_source, dry_run=dry_run)
+    elif args.command == "extnet":
+        if not args.tenant:
+            _exit_on_error("tenant is required for this command", parser)
+        json_source = _load_json_from_stdin()
+        en.migrate(json_source, args.tenant, dry_run=dry_run)
+    elif args.command == "delextnet":
+        pass
     else:
         _exit_on_error("Invalid command: " + args.command, parser)
 

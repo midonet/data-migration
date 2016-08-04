@@ -23,9 +23,6 @@ STATUS_PENDING_DELETE = "PENDING_DELETE"
 
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
-PROVIDER_ROUTER_NAMES = {'MidoNet Provider Router',
-                         'MidoNet Provider Router #1',
-                         'MidoNet Provider Router #2'}
 
 LEGACY_PLUGIN = "neutron.plugins.midonet.plugin.MidonetPluginV2"
 V1_PLUGIN = "midonet.neutron.plugin_v1.MidonetPluginV2"
@@ -73,3 +70,13 @@ MN_TZ_HOSTS = "tunnel_zone_hosts"
 MN_VIPS = "vips"
 
 ZOOM_ZK_ROOTS = ["/midonet/zoom", "/midonet/bridges", "/midonet/routers"]
+
+PROVIDER_ROUTER_NAMES = {'MidoNet Provider Router',
+                         'MidoNet Provider Router #1',
+                         'MidoNet Provider Router #2'}
+
+PROVIDER_ROUTER_TO_EXT_NET_MAP = {
+    'MidoNet Provider Router #1':
+        ('New_PR1_base_name', "169.254.0.0/19", "169.254.0.1"),
+    'MidoNet Provider Router #2':
+        ('New_PR2_base_name', "169.254.32.0/19", "169.254.32.1")}

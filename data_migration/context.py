@@ -40,6 +40,10 @@ def _import_plugin(clazz_path):
                                 _data=None):
         pass
 
+    def _notify_router_updated(_self, _context, _router_id,
+                               _operation=None):
+        pass
+
     def _notify_router_interface_action(_self, _context,
                                         _router_interface_info, _action):
         pass
@@ -48,6 +52,7 @@ def _import_plugin(clazz_path):
     setattr(clazz, 'setup_rpc', _setup_rpc)
     l3_db.L3RpcNotifierMixin.notify_router_deleted = _notify_router_deleted
     l3_db.L3RpcNotifierMixin.notify_routers_updated = _notify_routers_updated
+    l3_db.L3RpcNotifierMixin.notify_router_updated = _notify_router_updated
     l3_db.L3_NAT_db_mixin.notify_router_interface_action = (
         _notify_router_interface_action)
 
