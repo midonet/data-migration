@@ -1421,6 +1421,24 @@ class RouteWriter(RouteBase, MidonetWriter, dm_routes.RouteMixin,
             self.add_skip(obj['id'], "Neutron generated default route")
             return True
 
+        # Skip if next hop port is not on this router (it may have been added
+        # to a different device, like a bridge or another router)
+        next_hop_port = (
+            self.created_map[const.MN_PORTS].get(obj['nextHopPort']))
+
+        if not next_hop_port:
+            LOG.debug("Skipping route with non-existent next hop port" +
+                      str(obj))
+            self.add_skip(obj['id'], "Next Hop Port not found")
+            return True
+
+        if next_hop_port.get_device_id() != parent_id:
+            LOG.debug(
+                "Skipping route with next hop port not on this router: " +
+                str(obj))
+            self.add_skip(obj['id'], "Next Hop Port not on this device")
+            return True
+
         # Special handling for provider router routes
         if parent_id == self.provider_router["id"]:
             dest_len = obj["dstNetworkLength"]

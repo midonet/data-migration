@@ -1,0 +1,71 @@
+{
+  "neutron": {
+    "ports": {},
+    "floating_ips": {}
+  },
+  "midonet": {
+    "port_links": {},
+    "routes": {
+      "d5b44acb-d5bb-4f88-9351-a421de96721f": [
+        {
+          "attributes": null,
+          "dstNetworkAddr": "20.20.25.0",
+          "dstNetworkLength": 24,
+          "id": "84ebebea-426b-11e6-af46-0242ac110002",
+          "learned": false,
+          "nextHopGateway": "210.200.127.100",
+          "nextHopPort": "5530a999-336d-476c-9a6b-71507f05fc53",
+          "srcNetworkAddr": "0.0.0.0",
+          "srcNetworkLength": 0,
+          "type": "Normal",
+          "weight": 100
+        },
+        {
+          "attributes": null,
+          "dstNetworkAddr": "20.20.26.0",
+          "dstNetworkLength": 24,
+          "id": "90f9ca38-426b-11e6-a081-0242ac110002",
+          "learned": false,
+          "nextHopGateway": "200.200.127.3",
+          "nextHopPort": "aaaaaaaa-aaaa-476c-9a6b-71507f05fc53",
+          "srcNetworkAddr": "0.0.0.0",
+          "srcNetworkLength": 0,
+          "type": "Normal",
+          "weight": 100
+        }
+      ]
+    },
+    "routers": [
+      {
+        "adminStateUp": true,
+        "id": "d5b44acb-d5bb-4f88-9351-a421de96721f",
+        "inboundFilterId": null,
+        "loadBalancerId": null,
+        "name": "test1",
+        "outboundFilterId": null,
+        "tenantId": "09805d9633524902a45e27a6467fb2ac"
+      }
+    ],
+    "ports": {
+      "d5b44acb-d5bb-4f88-9351-a421de96721f": [
+        {
+          "adminStateUp": false,
+          "deviceId": "d5b44acb-d5bb-4f88-9351-a421de96721f",
+          "hostId": null,
+          "id": "5530a999-336d-476c-9a6b-71507f05fc53",
+          "inboundFilterId": null,
+          "interfaceName": null,
+          "networkAddress": null,
+          "networkLength": -1,
+          "outboundFilterId": null,
+          "peerId": null,
+          "portAddress": null,
+          "portMac": null,
+          "type": "Router",
+          "vifId": null,
+          "vlanId": null
+        }
+      ]
+    }
+  }
+}

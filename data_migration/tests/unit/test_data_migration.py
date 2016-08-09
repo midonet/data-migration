@@ -174,6 +174,43 @@ class TestExtraRoutes(BaseTestCase):
         self.assertEqual(7, len(test_obj.skipped))
 
 
+class TestBadRoutes(BaseTestCase):
+
+    def setUp(self):
+        super(TestBadRoutes, self).setUp()
+        self.test_module = importutils.import_module(MIDONET_DATA_MODULE)
+
+    def test_missing_next_hop(self):
+        f = os.path.join(os.path.dirname(__file__), "bad_route.json")
+        port_mock = mock.MagicMock()
+        port_mock.get_device_id.return_value = (
+            "bbbbbbbb-d5bb-4f88-9351-a421de96721f")
+        self.mn_api_mock.get_port.return_value = port_mock
+        created_data = {
+            "ports": {
+                "5530a999-336d-476c-9a6b-71507f05fc53": port_mock
+            },
+            "routers": {
+                "d5b44acb-d5bb-4f88-9351-a421de96721f": {
+                    "id": "d5b44acb-d5bb-4f88-9351-a421de96721f",
+                    "name": "test1"
+                },
+                "bbbbbbbb-d5bb-4f88-9351-a421de96721f": {
+                    "id": "bbbbbbbb-d5bb-4f88-9351-a421de96721f",
+                    "name": "test2"
+                }
+            }
+        }
+        in_data = open(f).read()
+        test_obj = self.test_module.RouteWriter(json.loads(in_data),
+                                                created_data, {},
+                                                dry_run=False)
+        test_obj.create()
+        test_obj.print_summary()
+
+        self.assertEqual(2, len(test_obj.skipped))
+
+
 class TestMidonetNeutronMismatch(BaseTestCase):
 
     def setUp(self):
