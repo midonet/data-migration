@@ -29,6 +29,7 @@ GW_PORT_ID = "4572512d-01af-4609-8ed5-b75f94c60b5e"
 RTR_INTF_PORT_ID = "89006b7b-cf42-4475-9ecb-848841a4c2a0"
 VIF_PORT_ID = "017cd4ca-d47d-4d30-acee-7cbc9ab32cf6"
 VIP_PORT_ID = "e687367c-5db1-4d00-800d-163fcd591199"
+BRIDGE_PORT1_ID = "cf6a7cf9-8916-434b-af0d-2c6b6f6ebabb"
 
 FIP_ID = "8856064f-8fd2-47f1-9ad2-d43acc38f006"
 UNASSOC_FIP_ID = "2b0acf41-b828-4416-b057-0d7403292f98"
@@ -285,6 +286,33 @@ NEUTRON_PORTS = [
         "security_groups": [],
         "status": "N/A",
         "tenant_id": ""
+    },
+    {
+        "id": BRIDGE_PORT1_ID,
+        "network_id": NET_ID,
+        "admin_state_up": True,
+        "binding:host_id": HOST_ID,
+        "binding:vif_details": {
+            "port_filter": True
+        },
+        "binding:vif_type": "midonet",
+        "binding:vnic_type": "normal",
+        "device_id": "27a0fa5e-562a-400d-b457-346ada73481f",
+        "device_owner": "compute:nova",
+        "extra_dhcp_opts": [],
+        "fixed_ips": [
+            {
+                "ip_address": "10.0.0.3",
+                "subnet_id": SUBNET_ID
+            }
+        ],
+        "mac_address": "fa:16:3e:f5:e0:2e",
+        "name": "vm1",
+        "security_groups": [
+            DEFAULT_SG_ID
+        ],
+        "status": "ACTIVE",
+        "tenant_id": TENANT_ID
     },
     {
         "id": VIP_PORT_ID,

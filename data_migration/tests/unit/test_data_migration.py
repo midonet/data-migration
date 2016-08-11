@@ -40,6 +40,13 @@ def _get_ports(context=None, filters=None):
         return ti.NEUTRON_PORTS
 
 
+def _get_port(context=None, port_id=None):
+    ports = [p for p in ti.NEUTRON_PORTS if p["id"] == port_id]
+    if len(ports) == 0:
+        raise Exception("Port not found")
+    return ports[0]
+
+
 class BaseTestCase(testtools.TestCase):
 
     def setUp(self):
@@ -67,6 +74,7 @@ class BaseTestCase(testtools.TestCase):
         self.plugin_mock.get_networks.return_value = ti.NEUTRON_NETWORKS
         self.plugin_mock.get_subnets.return_value = ti.NEUTRON_SUBNETS
         self.plugin_mock.get_ports = _get_ports
+        self.plugin_mock.get_port = _get_port
         self.plugin_mock.get_security_groups.return_value = (
             ti.NEUTRON_SECURITY_GROUPS)
         self.plugin_mock.get_routers.return_value = ti.NEUTRON_ROUTERS
@@ -81,6 +89,7 @@ class BaseTestCase(testtools.TestCase):
         context_mock.get_write_context.return_value = write_context_mock
         self.mn_api_mock = mock.MagicMock()
         write_context_mock.mn_api = self.mn_api_mock
+        write_context_mock.plugin = self.plugin_mock
 
 
 class TestDataReader(BaseTestCase):
@@ -152,6 +161,34 @@ class TestAntiSpoof(BaseTestCase):
         self.assertEqual(1, len(test_obj.ip_as_rules))
         self.assertEqual(1, len(test_obj.mac_as_rules))
         self.assertEqual(1, len(test_obj.updated))
+
+    def test_antispoof_port_missing(self):
+        f = os.path.join(os.path.dirname(__file__),
+                         "antispoof_port_missing.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.AntiSpoof(json.loads(in_data),
+                                              dry_run=False)
+        test_obj.migrate()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.ip_as_rules))
+        self.assertEqual(0, len(test_obj.mac_as_rules))
+        self.assertEqual(0, len(test_obj.updated))
+        self.assertEqual(1, len(test_obj.skipped))
+
+    def test_antispoof_chain_missing_rules(self):
+        f = os.path.join(os.path.dirname(__file__),
+                         "antispoof_chain_missing_rules.json")
+        in_data = open(f).read()
+        test_obj = self.test_module.AntiSpoof(json.loads(in_data),
+                                              dry_run=False)
+        test_obj.migrate()
+        test_obj.print_summary()
+
+        self.assertEqual(0, len(test_obj.ip_as_rules))
+        self.assertEqual(0, len(test_obj.mac_as_rules))
+        self.assertEqual(0, len(test_obj.updated))
+        self.assertEqual(1, len(test_obj.skipped))
 
 
 class TestExtraRoutes(BaseTestCase):

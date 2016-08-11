@@ -55,6 +55,15 @@ class AntiSpoof(dm_data.CommonData, dm_data.DataCounterMixin):
             if port["type"] != const.BRG_PORT_TYPE:
                 continue
 
+            try:
+                if not self.mc.plugin.get_port(self.mc.n_ctx, port["id"]):
+                    self.add_skip(port["id"], "Port is no longer valid")
+                    continue
+
+            except Exception:
+                self.add_skip(port["id"], "Port is no longer valid")
+                continue
+
             chain_id = port.get("inboundFilterId")
             if not chain_id:
                 continue
@@ -63,7 +72,11 @@ class AntiSpoof(dm_data.CommonData, dm_data.DataCounterMixin):
                 continue
 
             # Find MAC antispoof rule
-            chain_rules = rules[chain_id]
+            chain_rules = rules.get(chain_id)
+            if not chain_rules:
+                self.add_skip(port["id"], "Port's chain has no rules")
+                continue
+
             ip_as_rules = [r for r in chain_rules
                            if _is_ip_anti_spoof_rule(r)]
 
@@ -91,6 +104,13 @@ class AntiSpoof(dm_data.CommonData, dm_data.DataCounterMixin):
         print("%d IP antispoof replaced" % len(self.ip_as_rules))
         print("%d MAC antispoof found" % len(self.mac_as_rules))
         print("%d ports updated" % len(self.updated))
+        print("%d ports skipped" % len(self.skipped))
+
+        if self.skipped:
+            print("The skip reasons:")
+            for skip in self.skipped:
+                print("Object " + str(skip['object']) + " skipped because " +
+                      skip['reason'])
         print("\n")
 
 
