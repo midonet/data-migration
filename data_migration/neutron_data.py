@@ -229,7 +229,8 @@ class RouterInterfaceReader(RouterInterfaceBase, NeutronReader):
         ports = self.context.plugin.get_ports(self.context.n_ctx, filters=f)
         ri_ports = []
         for port in ports:
-            interface_dict = {'id': port['device_id'],
+            interface_dict = {'id': port['id'],
+                              'router_id': port['device_id'],
                               'port_id': port['id'],
                               'subnet_id': port['fixed_ips'][0]['subnet_id']}
             ri_ports.append(interface_dict)
@@ -239,8 +240,13 @@ class RouterInterfaceReader(RouterInterfaceBase, NeutronReader):
 class RouterInterfaceWriter(RouterInterfaceBase, NeutronWriter):
 
     def _create_obj(self, data):
+        # For neutron, the ID of this object is NOT unique. It is actually
+        # a special case, where this interface object needs the ID to be
+        # set to the router ID
+        data['id'] = data['router_id']
         self.try_create_obj(
-            self.mc.client.add_router_interface_postcommit, data['id'], data)
+            self.mc.client.add_router_interface_postcommit,
+            data['router_id'], data)
 
 
 class FloatingIpBase(object):
