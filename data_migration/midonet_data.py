@@ -780,7 +780,10 @@ class HostInterfacePortWriter(HostInterfaceBase, MidonetWriter):
 
     def skip_create_object(self, obj, parent_id=None, n_ids=None,
                            parents=None):
-        pr_port_ids = self.provider_router_port_ids
+        pr_port_ids = []
+        for p_r in const.PROVIDER_ROUTER_NAMES:
+            pr_port_ids += self.provider_router_port_ids(p_r)
+
         if obj['portId'] in pr_port_ids:
             LOG.debug("Skipping Provider Router port binding " + str(obj))
             self.add_skip(obj['portId'], "Provider Router port binding")
@@ -939,12 +942,15 @@ class LinkWriter(LinkBase, MidonetWriter):
 
     def create(self):
         links = self._get_midonet_resources(key='port_links')
-        port_ids = self.provider_router_port_ids
+        pr_port_ids = []
+        for p_r in const.PROVIDER_ROUTER_NAMES:
+            pr_port_ids += self.provider_router_port_ids(p_r)
+
         for port_id, peer_id in iter(links.items()):
             link = (port_id, peer_id)
 
             # Skip the provider router ports
-            if port_id in port_ids or peer_id in port_ids:
+            if port_id in pr_port_ids or peer_id in pr_port_ids:
                 LOG.debug("Skipping Provider Router port linking " + str(link))
                 self.add_skip(link, "Provider Router port linking")
                 continue
@@ -1228,6 +1234,19 @@ class PortWriter(PortBase, MidonetWriter):
             self.add_skip(port_id, "Unknown port type " + port_type)
             return True
 
+        # Skip ports on a provider router with a 169.254.0.0/16 net, because
+        # these are tenant-router GW ports which should be skipped.  Normally,
+        # they will get skipped as they correspond to neutron gateway ports and
+        # the neutron check above will skip it, but in case these tenant-router
+        # links were created manually, we will skip them here and later we will
+        # have to set the gateway on each tenant-router that had a manually
+        # created tenant-router link
+        if port_type == const.RTR_PORT_TYPE:
+            port_net = '.'.join(obj['networkAddress'].split('.')[0:2])
+            if port_net == '169.254':
+                self.add_skip(port_id, "Provider Router-Tenant Router GW Link")
+                return True
+
         # Skip if its parent resource was also skipped earlier
         if (self.skip_if_mn_resource_skipped(obj['id'], obj['deviceId'],
                                              const.MN_BRIDGES) or
@@ -1440,7 +1459,8 @@ class RouteWriter(RouteBase, MidonetWriter, dm_routes.RouteMixin,
             return True
 
         # Special handling for provider router routes
-        if parent_id == self.provider_router["id"]:
+        pr_id_list = [l['id'] for l in self.provider_routers.values()]
+        if parent_id in pr_id_list:
             dest_len = obj["dstNetworkLength"]
 
             # Skip FIP routes

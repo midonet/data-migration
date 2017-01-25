@@ -23,7 +23,9 @@ STATUS_PENDING_DELETE = "PENDING_DELETE"
 
 LB_HM_INTF_SUFFIX = "_hm_dp"
 MAX_INTF_LEN = 15
-PROVIDER_ROUTER_NAME = 'MidoNet Provider Router'
+PROVIDER_ROUTER_NAMES = {'MidoNet Provider Router',
+                         'MidoNet Provider Router #1',
+                         'MidoNet Provider Router #2'}
 
 LEGACY_PLUGIN = "neutron.plugins.midonet.plugin.MidonetPluginV2"
 V1_PLUGIN = "midonet.neutron.plugin_v1.MidonetPluginV2"

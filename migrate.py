@@ -100,7 +100,7 @@ def main():
         json_source = json.loads(source)
         pr.migrate(json_source, args.tenant, dry_run=dry_run)
     elif args.command == "deler":
-        pr.delete_edge_router()
+        pr.delete_edge_routers()
     elif args.command == "extraroutes":
         source = sys.stdin.readline()
         json_source = json.loads(source)

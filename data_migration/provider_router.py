@@ -36,70 +36,79 @@ def _get_external_subnet_ids(nets):
 class ProviderRouterMixin(object):
 
     def __init__(self):
-        self._provider_router = None
+        self._provider_routers = {}
         self._pr_port_map = {}
         super(ProviderRouterMixin, self).__init__()
 
     @property
-    def provider_router(self):
-        if not self._provider_router:
-            routers = self._get_midonet_resources('routers')
-            for router in routers:
-                if router['name'] == const.PROVIDER_ROUTER_NAME:
-                    self._provider_router = router
-                    break
+    def provider_routers(self):
+        if len(self._provider_routers) == 0:
+            self._provider_routers = {}
+            for r in self._get_midonet_resources('routers'):
+                if r['name'] in self._provider_routers:
+                    raise ValueError("More than one provider router with "
+                                     "the name: " + r['name'] +
+                                     " has been found.  This is not "
+                                     "supported by this script.")
+                self._provider_routers[r['name']] = r
 
-        if self._provider_router is None:
-            raise ValueError("Provider Router not found")
+        if len(self._provider_routers) == 0:
+            raise ValueError("No Provider Router found")
 
-        return self._provider_router
+        return self._provider_routers
 
     @property
-    def provider_router_ports(self):
+    def provider_routers_ports(self):
         if not self._pr_port_map:
             port_map = self._get_midonet_resources('ports')
-            ports = port_map[self.provider_router['id']]
-            for port in ports:
-                self._pr_port_map[port['id']] = port
+            for rtr_name, rtr in self.provider_routers.items():
+                self._pr_port_map[rtr_name] = {
+                    p['id']: p
+                    for p in (port_map[rtr['id']]
+                              if rtr['id'] in port_map
+                              else [])}
 
         return self._pr_port_map
 
-    @property
-    def provider_router_port_ids(self):
-        return self.provider_router_ports.keys()
+    def provider_router_port_ids(self, name):
+        return (self.provider_routers_ports[name].keys()
+                if name in self.provider_routers_ports
+                else [])
 
 
 class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
                      ProviderRouterMixin, er.ExtraRoutesMixin):
 
-    def provider_router_to_edge_router(self, tenant):
-        if self._edge_router_exists():
-            LOG.info("Edge router(s) already exists.  Delete before running "
-                     "this command. " + str())
-            return
+    def provider_routers_to_edge_routers(self, tenant):
+        for pr in const.PROVIDER_ROUTER_NAMES:
+            if self._router_exists(pr):
+                LOG.info("Edge router(s) already exists.  "
+                         "Delete before running this command. " +
+                         str())
+                return
 
-        edge_router = self._create_edge_router(tenant)
-        for port in self.provider_router_ports.values():
+            edge_router = self._create_edge_router(tenant, pr)
+            for port in self.provider_routers_ports[pr].values():
 
-            if not (port['hostId'] and port['interfaceName']):
-                LOG.debug("Skipping unbound port: " + port['id'])
-                continue
+                if not (port['hostId'] and port['interfaceName']):
+                    LOG.debug("Skipping unbound port: " + port['id'])
+                    continue
 
-            self._create_uplink_network(port, edge_router, tenant)
+                self._create_uplink_network(port, edge_router, tenant)
 
-        self._link_external_subnets(edge_router)
+            self._link_external_subnets(edge_router)
 
-        # Migrate BGP
-        self._migrate_bgp(edge_router)
+            # Migrate BGP
+            self._migrate_bgp(edge_router)
 
-        # Migrate extra routes
-        self.routes_to_extra_routes(self.provider_router['id'],
-                                    dest_router=edge_router, delete=False)
+            # Migrate extra routes
+            self.routes_to_extra_routes(self.provider_routers[pr]['id'],
+                                        dest_router=edge_router, delete=False)
 
-    def _edge_router_exists(self):
+    def _router_exists(self, name):
         # Find the edge router
         routers = self.mc.l3_plugin.get_routers(
-            self.mc.n_ctx, filters={"name": [const.PROVIDER_ROUTER_NAME]})
+            self.mc.n_ctx, filters={"name": [name]})
         return len(routers) > 0
 
     def _link_external_subnets(self, edge_router):
@@ -112,11 +121,13 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
             self._create_neutron_data(self.mc.l3_plugin.add_router_interface,
                                       edge_router_id, iface_obj)
 
-    def _create_edge_router(self, tenant):
-        router_obj = {'router': {'name': self.provider_router['name'],
-                                 'tenant_id': tenant,
-                                 'admin_state_up':
-                                     self.provider_router['adminStateUp']}}
+    def _create_edge_router(self, tenant, name):
+        router_obj = {
+            'router': {
+                'name': name,
+                'tenant_id': tenant,
+                'admin_state_up':
+                    self.provider_routers[name]['adminStateUp']}}
         LOG.debug("Create Edge Router: " + str(router_obj))
         return self._create_neutron_data(self.mc.l3_plugin.create_router,
                                          router_obj)
@@ -187,7 +198,7 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
         bgp_objs = self._get_midonet_resources(const.MN_BGP)
         pr_bgp_objs = []
         for port_id, bgp_list in iter(bgp_objs.items()):
-            if port_id in self.provider_router_port_ids:
+            if port_id in self.provider_router_port_ids(edge_router['name']):
                 pr_bgp_objs.extend(bgp_list)
         LOG.debug("Create edge router BGP peers from BGP: " + str(pr_bgp_objs))
 
@@ -219,11 +230,11 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
 def migrate(data, tenant, dry_run=False):
     LOG.info('Running Edge Router migration process')
     pr = ProviderRouter(data, dry_run=dry_run)
-    pr.provider_router_to_edge_router(tenant)
+    pr.provider_routers_to_edge_routers(tenant)
 
 
-def delete_edge_router():
-    LOG.info("Deleting Edge Router and Uplink Networks")
+def delete_edge_routers():
+    LOG.info("Deleting Edge Routers and Uplink Networks")
     mc = ctx.get_write_context()
 
     # Remove Uplink networks
@@ -250,10 +261,8 @@ def delete_edge_router():
             LOG.debug("Removing Uplink network: " + str(net))
             mc.plugin.delete_network(mc.n_ctx, net["id"])
 
-    # There should not be more than one of these found, but in case data got
-    # corrupted, clean them up.
     routers = mc.l3_plugin.get_routers(
-        mc.n_ctx, filters={"name": [const.PROVIDER_ROUTER_NAME]})
+        mc.n_ctx, filters={"name": [r for r in const.PROVIDER_ROUTER_NAMES]})
     for router in routers:
         er_id = router["id"]
 
