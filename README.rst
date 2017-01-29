@@ -65,3 +65,39 @@ Commands::
      delextnet
          Delete external network named 'MidoNet External Network', assumed to
          have been created from extnet command.
+
+
+To add routes for each tenant network (a network on a router which has a
+gateway port on an external network) to the appropriate edge router (the
+router acting as the gateway for the external network to the outside
+world), run the ``tenant_router_route_adder.py`` script.
+
+The ``tenant_router_route_adder.py`` command is defined as follows::
+
+     $ ./tenant_router_route_adder.py [-h|--help] [-d|--debug] [-n|--dryrun]
+                    [-t|--tenant] [-c|--conf <conf_file>]
+
+Options::
+
+     -h,--help
+         Show usage of the command
+
+     -d,--debug
+         Turn on debug level logging.  Default is off.
+
+     -n,--dryrun
+         Run the command but only print out actions that would be taken
+         normally, without actually committing the data.
+
+     -t, --tenant
+         Tenant ID where the tenant routers and edge router reside.
+
+     -c,--conf <conf_file>
+         Use the specified configuration file for data migration.  If not
+         specified, it looks for './migration.conf'.
+
+This script will loop through each external network/edge router combination
+and scan every tenant router with an interface on the external network.
+For each tenant network attached to each tenant router, a route will be
+added on the edge router for that network's CIDR via the tenant router's
+gateway IP using the ``extraroutes`` feature in neutron.
