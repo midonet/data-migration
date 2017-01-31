@@ -34,7 +34,7 @@ class RouteAdder(dm_data.CommonData, dm_data.DataCounterMixin,
 
     def _external_nets_exist(self):
         # Find the external network with the given name
-        net_names = [p[0]
+        net_names = [p[0] + const.EXT_NET_SUFFIX
                      for p in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values()]
         nets = self.mc.plugin.get_networks(
             self.mc.n_ctx, filters={"name": net_names})
@@ -42,7 +42,7 @@ class RouteAdder(dm_data.CommonData, dm_data.DataCounterMixin,
 
     def create(self, tenant):
         for _, ex_net in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.items():
-            net_name = ex_net[0]
+            net_name = ex_net[0] + const.EXT_NET_SUFFIX
             ext_net_obj = self.mc.plugin.get_networks(
                 self.mc.n_ctx, filters={"name": [net_name]})
 
@@ -54,7 +54,8 @@ class RouteAdder(dm_data.CommonData, dm_data.DataCounterMixin,
                 continue
 
             edge_router_list = self.mc.l3_plugin.get_routers(
-                self.mc.n_ctx, filters={"name": [ex_net[0] + '_edge_router']})
+                self.mc.n_ctx,
+                filters={"name": [ex_net[0] + const.EDGE_ROUTER_SUFFIX]})
             if len(edge_router_list) != 1:
                 LOG.warning(
                     "Only one edge router should have been found for "

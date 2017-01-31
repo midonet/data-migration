@@ -70,6 +70,8 @@ MN_TZ_HOSTS = "tunnel_zone_hosts"
 MN_VIPS = "vips"
 
 ZOOM_ZK_ROOTS = ["/midonet/zoom", "/midonet/bridges", "/midonet/routers"]
+EDGE_ROUTER_SUFFIX = '_router'
+EXT_NET_SUFFIX = '_net'
 
 PROVIDER_ROUTER_NAMES = {'MidoNet Provider Router',
                          'MidoNet Provider Router #1',

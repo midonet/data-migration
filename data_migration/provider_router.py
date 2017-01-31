@@ -85,7 +85,8 @@ class ProviderRouterMixin(object):
                 # external network
                 if rtr not in const.PROVIDER_ROUTER_TO_EXT_NET_MAP:
                     continue
-                edge_name = const.PROVIDER_ROUTER_TO_EXT_NET_MAP[rtr][0]
+                edge_name = (const.PROVIDER_ROUTER_TO_EXT_NET_MAP[rtr][0] +
+                             const.EXT_NET_SUFFIX)
                 for port in filter(
                         lambda p: p.get('peerId') is not None,
                         pr_port_map.values()):
@@ -105,7 +106,7 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
             return
 
         for pr, ex_net in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.items():
-            ext_subnet_name = ex_net[0] + '_sub'
+            ext_subnet_name = ex_net[0] + const.EXT_NET_SUFFIX + '_sub'
             ext_subnet = self.mc.plugin.get_subnets(
                 self.mc.n_ctx, filters={"name": [ext_subnet_name]})
             if len(ext_subnet) != 1:
@@ -114,7 +115,7 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
                           str(len(ext_subnet)) + ", skipping.")
                 continue
 
-            er_name = ex_net[0] + '_edge_router'
+            er_name = ex_net[0] + const.EDGE_ROUTER_SUFFIX
             edge_router = self._create_edge_router(tenant, er_name)
 
             for port in self.provider_routers_ports[pr].values():
@@ -140,7 +141,7 @@ class ProviderRouter(dm_data.CommonData, dm_data.DataCounterMixin,
 
     def _edge_routers_exist(self):
         # Find the edge router
-        names = map(lambda s: s + '_edge_router',
+        names = map(lambda s: s + const.EDGE_ROUTER_SUFFIX,
                     [p[0]
                      for p in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values()])
         routers = self.mc.l3_plugin.get_routers(
@@ -310,7 +311,7 @@ def delete_edge_routers():
 
     routers = mc.l3_plugin.get_routers(
         mc.n_ctx, filters={
-            "name": map(lambda s: s[0] + '_edge_router',
+            "name": map(lambda s: s[0] + const.EDGE_ROUTER_SUFFIX,
                         const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values())})
 
     for router in routers:

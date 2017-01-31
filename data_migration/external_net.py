@@ -26,7 +26,7 @@ class ExternalNet(dm_data.CommonData, dm_data.DataCounterMixin,
 
     def _external_nets_exist(self):
         # Find the external network with the given name
-        net_names = [p[0]
+        net_names = [p[0] + const.EXT_NET_SUFFIX
                      for p in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values()]
         nets = self.mc.plugin.get_networks(
             self.mc.n_ctx, filters={"name": net_names})
@@ -36,7 +36,7 @@ class ExternalNet(dm_data.CommonData, dm_data.DataCounterMixin,
         nets = {}
         for net, cidr, gw_ip in const.PROVIDER_ROUTER_TO_EXT_NET_MAP.values():
             net_obj = {'network': {
-                'name': net,
+                'name': net + const.EXT_NET_SUFFIX,
                 'tenant_id': tenant,
                 'admin_state_up': True,
                 'shared': False,
@@ -49,19 +49,20 @@ class ExternalNet(dm_data.CommonData, dm_data.DataCounterMixin,
             if not neutron_net:
                 neutron_net = {'id': net + '_AUTOMATICALLY_CREATED'}
 
-            nets[net] = neutron_net
+            nets[net + const.EXT_NET_SUFFIX] = neutron_net
 
-            subnet_obj = {'subnet': {'name': net + '_sub',
-                                     'network_id': neutron_net['id'],
-                                     'ip_version': 4,
-                                     'cidr': cidr,
-                                     'gateway_ip': gw_ip,
-                                     'allocation_pools': None,
-                                     'dns_nameservers': [],
-                                     'host_routes': [],
-                                     'enable_dhcp': False,
-                                     'tenant_id': tenant,
-                                     'admin_state_up': True}}
+            subnet_obj = {'subnet': {
+                'name': net + const.EXT_NET_SUFFIX + '_sub',
+                'network_id': neutron_net['id'],
+                'ip_version': 4,
+                'cidr': cidr,
+                'gateway_ip': gw_ip,
+                'allocation_pools': None,
+                'dns_nameservers': [],
+                'host_routes': [],
+                'enable_dhcp': False,
+                'tenant_id': tenant,
+                'admin_state_up': True}}
             LOG.info("Create External Subnet: " + str(subnet_obj))
             self._create_neutron_data(
                 self.mc.plugin.create_subnet,
